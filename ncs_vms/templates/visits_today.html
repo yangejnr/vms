@@ -1,0 +1,72 @@
+{% extends "base.html" %}
+{% block content %}
+<h3 class="mb-3">Today's Visits</h3>
+
+<form class="row g-2 mb-3" onsubmit="return signoutVisit(event)">
+  <div class="col-auto">
+    <input type="text" id="signout_visit_no" class="form-control" placeholder="Visit No (e.g. NCS/25/12/11/0001)" required>
+  </div>
+  <div class="col-auto">
+    <button class="btn btn-danger">Sign Out</button>
+  </div>
+  <div class="col-auto">
+    <span id="signout_status" class="text-success"></span>
+  </div>
+</form>
+
+<table class="table table-sm table-striped">
+  <thead>
+    <tr>
+      <th>Visit No</th>
+      <th>Visitor</th>
+      <th>Phone</th>
+      <th>Purpose</th>
+      <th>Status</th>
+      <th>Sign-in</th>
+      <th>Sign-out</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for v in visits %}
+    <tr>
+      <td>{{ v.visit_no }}</td>
+      <td>{{ v.fullname }}</td>
+      <td>{{ v.phone }}</td>
+      <td>{{ v.purpose }}</td>
+      <td>{{ v.status }}</td>
+      <td>{{ v.signin_time }}</td>
+      <td>{{ v.signout_time }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function signoutVisit(e) {
+  e.preventDefault();
+  const no = document.getElementById('signout_visit_no').value;
+  const fd = new FormData();
+  fd.append('visit_no', no);
+  fetch('/api/visit/signout', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(d => {
+      const statusEl = document.getElementById('signout_status');
+      if (d.ok) {
+        statusEl.classList.remove('text-danger');
+        statusEl.classList.add('text-success');
+        statusEl.innerText = 'Signed out.';
+        // reload table
+        window.location.reload();
+      } else {
+        statusEl.classList.remove('text-success');
+        statusEl.classList.add('text-danger');
+        statusEl.innerText = d.error || 'Error';
+      }
+    });
+  return false;
+}
+</script>
+{% endblock %}
+

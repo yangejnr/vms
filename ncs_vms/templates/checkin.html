@@ -1,0 +1,243 @@
+{% extends "base.html" %}
+{% block content %}
+<h3 class="mb-3">Visitor Check-In</h3>
+
+<!-- STEP 1: Search returning visitor -->
+<div class="card mb-3">
+  <div class="card-body">
+    <h5>Step 1: Identify Visitor</h5>
+    <div class="row">
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Search by Phone or Email</label>
+        <div class="input-group">
+          <input type="text" id="searchTerm" class="form-control" placeholder="Phone or Email">
+          <button class="btn btn-primary" onclick="searchByText()">Search</button>
+        </div>
+      </div>
+      <div class="col-md-6 mb-3">
+        <label class="form-label">Or Search by Photo</label>
+        <div>
+          <video id="video" width="320" height="240" autoplay style="background:#ccc;"></video>
+          <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+        </div>
+        <button type="button" class="btn btn-secondary mt-2" onclick="searchByPhoto()">Capture & Search</button>
+      </div>
+    </div>
+    <div id="searchResult" class="mt-2"></div>
+  </div>
+</div>
+
+<!-- STEP 2A: New Visitor Registration (hidden by default) -->
+<div id="newVisitorCard" class="card mb-3" style="display:none;">
+  <div class="card-body">
+    <h5>New Visitor Registration</h5>
+    <form id="newVisitorForm" onsubmit="return createVisitor(event)">
+      <div class="row mb-2">
+        <div class="col-md-6">
+          <label>Full Name</label>
+          <input name="fullname" class="form-control" required>
+        </div>
+        <div class="col-md-3">
+          <label>Phone</label>
+          <input name="phone" class="form-control" required>
+        </div>
+        <div class="col-md-3">
+          <label>Email (optional)</label>
+          <input name="email" class="form-control">
+        </div>
+      </div>
+      <div class="mb-2">
+        <label>Address</label>
+        <textarea name="address" class="form-control" rows="2"></textarea>
+      </div>
+      <!-- store captured photo for new visitor -->
+      <input type="hidden" name="photo_data" id="photo_data">
+      <button class="btn btn-success">Save Visitor</button>
+      <span id="newVisitorStatus" class="ms-2 text-success"></span>
+    </form>
+  </div>
+</div>
+
+<!-- STEP 2B: Visit Form (shown for both new + returning) -->
+<div id="visitCard" class="card mb-3" style="display:none;">
+  <div class="card-body">
+    <h5>Visit Details</h5>
+    <form id="visitForm" onsubmit="return createVisit(event)">
+      <input type="hidden" id="visitor_id" name="visitor_id" required>
+      <div class="row mb-2">
+        <div class="col-md-4">
+          <label>Purpose</label>
+          <select name="purpose" class="form-select" required>
+            <option value="">Select</option>
+            <option value="official">Official</option>
+            <option value="personal">Personal</option>
+          </select>
+        </div>
+        <div class="col-md-4">
+          <label>Group Visit?</label>
+          <select id="groupVisit" class="form-select" onchange="toggleGroup()">
+            <option value="no">No</option>
+            <option value="yes">Yes</option>
+          </select>
+        </div>
+        <div class="col-md-4" id="groupSizeDiv" style="display:none;">
+          <label>Number of Persons</label>
+          <input name="group_size" class="form-control" value="1">
+        </div>
+      </div>
+      <div class="mb-2">
+        <label>Documents Carried</label>
+        <textarea name="documents" class="form-control" rows="2"></textarea>
+      </div>
+      <button class="btn btn-primary">Generate Visit & QR</button>
+      <span id="visitStatus" class="ms-2 text-success"></span>
+    </form>
+
+    <div id="qrSection" class="mt-3" style="display:none;">
+      <h6>Visitor Slip</h6>
+      <p id="visitNo"></p>
+      <img id="qrImage" src="" alt="QR Code" style="width:200px;height:200px;">
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+// Start camera
+let videoStream = null;
+if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+  navigator.mediaDevices.getUserMedia({ video: true })
+    .then(function(stream) {
+      videoStream = stream;
+      const video = document.getElementById('video');
+      video.srcObject = stream;
+      video.play();
+    })
+    .catch(err => console.error('Camera error', err));
+}
+
+function toggleGroup() {
+  const v = document.getElementById('groupVisit').value;
+  document.getElementById('groupSizeDiv').style.display = v === 'yes' ? 'block' : 'none';
+}
+
+function showNewVisitorForm() {
+  document.getElementById('newVisitorCard').style.display = 'block';
+  document.getElementById('visitCard').style.display = 'block';
+}
+
+function showVisitFormOnly(visitor) {
+  document.getElementById('newVisitorCard').style.display = 'none';
+  document.getElementById('visitCard').style.display = 'block';
+  document.getElementById('visitor_id').value = visitor.id;
+}
+
+// text search
+function searchByText() {
+  const q = document.getElementById('searchTerm').value;
+  if (!q) return;
+  fetch('/api/visitor/search?q=' + encodeURIComponent(q))
+    .then(r => r.json())
+    .then(handleSearchResult);
+}
+
+// photo search (for now, just capture + treat as "new" if not found)
+function searchByPhoto() {
+  const video = document.getElementById('video');
+  const canvas = document.getElementById('canvas');
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+  const dataURL = canvas.toDataURL('image/jpeg');
+  // store photo in hidden field so if new visitor is created, we save it
+  document.getElementById('photo_data').value = dataURL;
+
+  const div = document.getElementById('searchResult');
+  div.innerHTML = '<span class="text-warning">Photo captured. No biometric search yet; please register visitor.</span>';
+  showNewVisitorForm();
+}
+
+function handleSearchResult(d) {
+  const div = document.getElementById('searchResult');
+  if (!d.found) {
+    div.innerHTML = '<span class="text-danger">Visitor not found. Register as new.</span>';
+    showNewVisitorForm();
+    return;
+  }
+  document.getElementById('visitor_id').value = d.visitor.id;
+  div.innerHTML = '<b>' + d.visitor.fullname + '</b> (Phone: ' + d.visitor.phone + ')<br>' +
+                  'Previous visits: ' + d.history.length;
+  showVisitFormOnly(d.visitor);
+}
+
+function createVisitor(e) {
+  e.preventDefault();
+  const form = e.target;
+  const fd = new FormData(form);
+  fetch('/api/visitor/create', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        // set visitor id for the visit form
+        document.getElementById('visitor_id').value = d.visitor_id;
+        // success text
+        document.getElementById('newVisitorStatus').innerText = 'Record saved successfully.';
+        // hide registration card
+        document.getElementById('newVisitorCard').style.display = 'none';
+        // ensure visit card visible
+        document.getElementById('visitCard').style.display = 'block';
+
+        // freeze current frame as static passport image
+        const video = document.getElementById('video');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const dataURL = canvas.toDataURL('image/jpeg');
+
+        let img = document.getElementById('passportPreview');
+        if (!img) {
+          img = document.createElement('img');
+          img.id = 'passportPreview';
+          img.style.width = '120px';
+          img.style.height = '120px';
+          img.style.borderRadius = '4px';
+          img.style.border = '1px solid #ccc';
+          img.style.display = 'block';
+          img.style.marginTop = '8px';
+          document.getElementById('searchResult').appendChild(img);
+        }
+        img.src = dataURL;
+
+        // stop live video (optional)
+        if (video.srcObject) {
+          video.srcObject.getTracks().forEach(t => t.stop());
+          video.srcObject = null;
+        }
+      }
+    });
+  return false;
+}
+
+function createVisit(e) {
+  e.preventDefault();
+  const form = e.target;
+  const fd = new FormData(form);
+  if (!fd.get('visitor_id')) {
+    alert('Select or create a visitor first.');
+    return false;
+  }
+  fetch('/api/visit/create', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(d => {
+      if (d.ok) {
+        document.getElementById('visitStatus').innerText = 'Visit created.';
+        document.getElementById('visitNo').innerText = 'Visit No: ' + d.visit_no;
+        document.getElementById('qrImage').src = '/static/' + d.qr;
+        document.getElementById('qrSection').style.display = 'block';
+      }
+    });
+  return false;
+}
+</script>
+{% endblock %}
+
