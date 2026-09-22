@@ -4,6 +4,7 @@ from flask_cors import CORS
 from datetime import datetime, date
 from sqlalchemy import func, text
 from sqlalchemy.exc import IntegrityError
+from werkzeug.security import generate_password_hash, check_password_hash
 import qrcode
 from PIL import Image, ImageOps
 import os
@@ -29,6 +30,49 @@ class Location(db.Model):
     name = db.Column(db.String(100))
     type = db.Column(db.String(20))  # 'department','command','unit'
     parent_id = db.Column(db.Integer)
+
+class Role(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(50), unique=True, nullable=False)
+    description = db.Column(db.String(200), nullable=True)
+    landing_endpoint = db.Column(db.String(80), nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+class User(db.Model):
+    __tablename__ = 'user'
+    id = db.Column(db.Integer, primary_key=True)
+    service_no = db.Column(db.String(40), unique=True, nullable=False)
+    fullname = db.Column(db.String(150), nullable=False)
+    password_hash = db.Column(db.String(255), nullable=False)
+    role_id = db.Column(db.Integer, db.ForeignKey('role.id'), nullable=False)
+    rank = db.Column(db.String(50), nullable=True)
+    email = db.Column(db.String(100), nullable=True)
+    phone = db.Column(db.String(20), nullable=True)
+    location_type = db.Column(db.String(10), nullable=True)  # 'HQ' or 'Command'
+    department_id = db.Column(db.Integer, nullable=True)
+    unit_id = db.Column(db.Integer, nullable=True)
+    active = db.Column(db.Boolean, default=True)
+    last_login_at = db.Column(db.DateTime, nullable=True)
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
+
+    role = db.relationship('Role', backref='users')
+
+    def set_password(self, raw_password):
+        self.password_hash = generate_password_hash(raw_password)
+
+    def check_password(self, raw_password):
+        if not self.password_hash:
+            return False
+        return check_password_hash(self.password_hash, raw_password)
+
+ROLE_ADMIN = 'Admin'
+ROLE_OFFICER = 'Officer'
+
+DEFAULT_ROLES = [
+    (ROLE_ADMIN, 'Full system administration and reporting', 'admin_dashboard'),
+    (ROLE_OFFICER, 'Reception desk check-in and visitor handling', 'checkin'),
+]
 
 class Officer(db.Model):
     id = db.Column(db.Integer, primary_key=True)
@@ -102,6 +146,36 @@ def migrate_database():
         'created_by': 'VARCHAR(80)',
         'signed_out_by': 'VARCHAR(80)'
     })
+    seed_roles()
+
+def seed_roles():
+    """Ensure the Admin and Officer roles exist, then create a default admin."""
+    changed = False
+    for name, description, landing in DEFAULT_ROLES:
+        role = Role.query.filter_by(name=name).first()
+        if not role:
+            db.session.add(Role(name=name, description=description, landing_endpoint=landing))
+            changed = True
+        elif role.landing_endpoint != landing:
+            role.landing_endpoint = landing
+            changed = True
+    if changed:
+        db.session.commit()
+
+    if User.query.count() == 0:
+        admin_role = Role.query.filter_by(name=ROLE_ADMIN).first()
+        default_service_no = os.environ.get('DEFAULT_ADMIN_SERVICE_NO', 'ADMIN')
+        default_password = os.environ.get('DEFAULT_ADMIN_PASSWORD', 'NCS-1234')
+        admin = User(
+            service_no=default_service_no,
+            fullname='System Administrator',
+            role_id=admin_role.id,
+            active=True
+        )
+        admin.set_password(default_password)
+        db.session.add(admin)
+        db.session.commit()
+        print(f"Created default admin account: {default_service_no} / {default_password}")
 
 with app.app_context():
     migrate_database()
@@ -120,9 +194,16 @@ def generate_visit_no():
 
 @app.route('/')
 def index():
-    if session.get('desk_officer'):
-        return redirect(url_for('checkin'))
+    if session.get('user_id'):
+        return redirect(url_for(landing_endpoint_for_session()))
     return render_template('login.html')
+
+def landing_endpoint_for_session():
+    """Where the signed-in user should land, based on their role."""
+    landing = session.get('role_landing')
+    if landing and landing in app.view_functions:
+        return landing
+    return 'checkin'
 
 @app.route('/login', methods=['POST'])
 def login():
@@ -132,32 +213,94 @@ def login():
         or ''
     ).strip()
     password = request.form.get('password') or request.form.get('access_code') or ''
-    expected_code = os.environ.get('DESK_OFFICER_CODE', 'NCS-1234')
 
-    if service_no and password == expected_code:
-        session['desk_officer'] = service_no
-        return redirect(url_for('checkin'))
+    user = User.query.filter(func.lower(User.service_no) == service_no.lower()).first()
 
-    return render_template(
-        'login.html',
-        error='Invalid service number or password.',
-        service_no=service_no
-    ), 401
+    if not user or not user.check_password(password):
+        return render_template(
+            'login.html',
+            error='Invalid service number or password.',
+            service_no=service_no
+        ), 401
+
+    if not user.active:
+        return render_template(
+            'login.html',
+            error='This account has been disabled. Contact the administrator.',
+            service_no=service_no
+        ), 403
+
+    start_user_session(user)
+    return redirect(url_for(landing_endpoint_for_session()))
+
+def start_user_session(user):
+    role = user.role
+    session.clear()
+    session['user_id'] = user.id
+    session['desk_officer'] = user.service_no
+    session['user_name'] = user.fullname
+    session['role'] = role.name if role else None
+    session['role_landing'] = (role.landing_endpoint if role else None) or 'checkin'
+    user.last_login_at = datetime.utcnow()
+    db.session.commit()
 
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('index'))
 
+def current_user():
+    user_id = session.get('user_id')
+    if not user_id:
+        return None
+    return db.session.get(User, user_id)
+
+def current_role():
+    return session.get('role')
+
+def is_admin():
+    return current_role() == ROLE_ADMIN
+
 def require_officer_session():
-    if not session.get('desk_officer'):
+    """Any authenticated user may reach the reception module."""
+    if not session.get('user_id'):
         return redirect(url_for('index'))
     return None
 
+def require_admin_session():
+    if not session.get('user_id'):
+        return redirect(url_for('index'))
+    if not is_admin():
+        return render_template('forbidden.html'), 403
+    return None
+
 def require_api_officer_session():
-    if not session.get('desk_officer'):
+    if not session.get('user_id'):
         return jsonify({'ok': False, 'error': 'login_required'}), 401
     return None
+
+def require_api_admin_session():
+    if not session.get('user_id'):
+        return jsonify({'ok': False, 'error': 'login_required'}), 401
+    if not is_admin():
+        return jsonify({'ok': False, 'error': 'forbidden'}), 403
+    return None
+
+def normalize_name(value):
+    """Visitor and officer names are stored uppercase, with tidy spacing."""
+    if not value:
+        return value
+    return ' '.join(str(value).split()).upper()
+
+def digits_only(value):
+    if not value:
+        return ''
+    return ''.join(ch for ch in str(value) if ch.isdigit())
+
+def valid_phone(value):
+    """Nigerian mobile-style numbers: exactly 11 digits."""
+    digits = digits_only(value)
+    return len(digits) == 11
 
 def decode_data_image(photo_data):
     if not photo_data or not photo_data.startswith('data:image'):
@@ -342,10 +485,478 @@ def checkin():
 
 @app.route('/admin')
 def admin():
-    gate = require_officer_session()
+    gate = require_admin_session()
     if gate:
         return gate
-    return render_template('admin.html')
+    return redirect(url_for('admin_dashboard'))
+
+@app.route('/admin/dashboard')
+def admin_dashboard():
+    gate = require_admin_session()
+    if gate:
+        return gate
+
+    today = date.today()
+    stats = {
+        'visitors_total': Visitor.query.count(),
+        'visits_total': Visit.query.count(),
+        'visits_today': Visit.query.filter(Visit.date == today).count(),
+        'active_visits': Visit.query.filter(Visit.status == 'in').count(),
+        'users_total': User.query.count(),
+        'users_active': User.query.filter(User.active.is_(True)).count(),
+        'roles_total': Role.query.count(),
+        'locations_total': Location.query.count()
+    }
+
+    recent_visits = Visit.query.order_by(Visit.signin_time.desc()).limit(8).all()
+    recent_rows = []
+    for v in recent_visits:
+        visitor = db.session.get(Visitor, v.visitor_id)
+        recent_rows.append({
+            'visit_no': v.visit_no,
+            'fullname': visitor.fullname if visitor else '',
+            'date': v.date.strftime('%Y-%m-%d') if v.date else '',
+            'status': v.status,
+            'purpose': v.purpose
+        })
+
+    return render_template('admin_dashboard.html', stats=stats, recent_visits=recent_rows)
+
+@app.route('/admin/users')
+def admin_users():
+    gate = require_admin_session()
+    if gate:
+        return gate
+
+    users = User.query.order_by(User.fullname).all()
+    roles = Role.query.order_by(Role.name).all()
+    locations = Location.query.order_by(Location.name).all()
+
+    rows = []
+    for u in users:
+        rows.append({
+            'id': u.id,
+            'service_no': u.service_no,
+            'fullname': u.fullname,
+            'rank': u.rank or '',
+            'email': u.email or '',
+            'phone': u.phone or '',
+            'role_id': u.role_id,
+            'role_name': u.role.name if u.role else '',
+            'active': u.active,
+            'last_login_at': u.last_login_at.strftime('%Y-%m-%d %H:%M') if u.last_login_at else 'Never'
+        })
+
+    return render_template(
+        'admin_users.html',
+        users=rows,
+        roles=[{'id': r.id, 'name': r.name, 'description': r.description or ''} for r in roles],
+        locations=[{'id': l.id, 'name': l.name, 'type': l.type or ''} for l in locations]
+    )
+
+@app.route('/admin/roles')
+def admin_roles():
+    gate = require_admin_session()
+    if gate:
+        return gate
+
+    roles = Role.query.order_by(Role.name).all()
+    rows = []
+    for r in roles:
+        rows.append({
+            'id': r.id,
+            'name': r.name,
+            'description': r.description or '',
+            'landing_endpoint': r.landing_endpoint or '',
+            'user_count': User.query.filter_by(role_id=r.id).count()
+        })
+    return render_template('admin_roles.html', roles=rows)
+
+@app.route('/admin/locations')
+def admin_locations():
+    gate = require_admin_session()
+    if gate:
+        return gate
+
+    locations = Location.query.order_by(Location.type, Location.name).all()
+    rows = []
+    for l in locations:
+        parent = db.session.get(Location, l.parent_id) if l.parent_id else None
+        rows.append({
+            'id': l.id,
+            'name': l.name,
+            'type': l.type or '',
+            'parent_name': parent.name if parent else ''
+        })
+    return render_template('admin_locations.html', locations=rows)
+
+@app.route('/admin/reports')
+def admin_reports():
+    gate = require_admin_session()
+    if gate:
+        return gate
+
+    query = build_history_query(request.args)
+    total = query.count()
+    visits = query.order_by(Visit.signin_time.desc()).limit(500).all()
+
+    rows = []
+    for v in visits:
+        visitor = db.session.get(Visitor, v.visitor_id)
+        rows.append({
+            'visit_no': v.visit_no,
+            'fullname': visitor.fullname if visitor else '',
+            'phone': visitor.phone if visitor else '',
+            'purpose': v.purpose,
+            'host_name': v.host_name or '',
+            'destination': v.destination or '',
+            'status': v.status,
+            'date': v.date.strftime('%Y-%m-%d') if v.date else '',
+            'signin_time': v.signin_time.strftime('%H:%M') if v.signin_time else '',
+            'signout_time': v.signout_time.strftime('%H:%M') if v.signout_time else '',
+            'created_by': v.created_by or ''
+        })
+
+    year_rows = db.session.query(
+        func.strftime('%Y', Visit.date)
+    ).distinct().order_by(func.strftime('%Y', Visit.date).desc()).all()
+    years = [int(r[0]) for r in year_rows if r[0]]
+
+    filters = {
+        'q': (request.args.get('q') or '').strip(),
+        'status': (request.args.get('status') or '').strip(),
+        'purpose': (request.args.get('purpose') or '').strip(),
+        'month': (request.args.get('month') or '').strip(),
+        'year': (request.args.get('year') or '').strip(),
+        'date_from': (request.args.get('date_from') or '').strip(),
+        'date_to': (request.args.get('date_to') or '').strip()
+    }
+
+    return render_template(
+        'admin_reports.html',
+        visits=rows,
+        filters=filters,
+        years=years,
+        total=total,
+        shown=len(rows)
+    )
+
+# ---------------------------------------------------------------- Admin APIs
+
+@app.route('/api/admin/users', methods=['POST'])
+def api_create_user():
+    gate = require_api_admin_session()
+    if gate:
+        return gate
+
+    data = request.form
+    service_no = clean_form_value(data, 'service_no')
+    fullname = normalize_name(clean_form_value(data, 'fullname'))
+    password = data.get('password') or ''
+    role_id = parse_int_arg(data.get('role_id'))
+
+    if not service_no or not fullname or not password or not role_id:
+        return jsonify({'ok': False, 'error': 'missing_required_fields'}), 400
+
+    if len(password) < 6:
+        return jsonify({
+            'ok': False,
+            'error': 'weak_password',
+            'message': 'Password must be at least 6 characters.'
+        }), 400
+
+    if not db.session.get(Role, role_id):
+        return jsonify({'ok': False, 'error': 'invalid_role'}), 400
+
+    if User.query.filter(func.lower(User.service_no) == service_no.lower()).first():
+        return jsonify({'ok': False, 'error': 'service_no_exists'}), 409
+
+    phone = digits_only(clean_form_value(data, 'phone'))
+    if phone and not valid_phone(phone):
+        return jsonify({
+            'ok': False,
+            'error': 'invalid_phone',
+            'message': 'Phone number must contain exactly 11 digits.'
+        }), 400
+
+    user = User(
+        service_no=service_no,
+        fullname=fullname,
+        role_id=role_id,
+        rank=clean_form_value(data, 'rank'),
+        email=clean_form_value(data, 'email'),
+        phone=phone or None,
+        location_type=clean_form_value(data, 'location_type'),
+        department_id=parse_int_arg(data.get('department_id')),
+        unit_id=parse_int_arg(data.get('unit_id')),
+        active=True
+    )
+    user.set_password(password)
+    db.session.add(user)
+    db.session.commit()
+
+    return jsonify({'ok': True, 'user_id': user.id})
+
+@app.route('/api/admin/users/<int:user_id>/update', methods=['POST'])
+def api_update_user(user_id):
+    gate = require_api_admin_session()
+    if gate:
+        return gate
+
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'ok': False, 'error': 'user_not_found'}), 404
+
+    data = request.form
+    fullname = normalize_name(clean_form_value(data, 'fullname'))
+    role_id = parse_int_arg(data.get('role_id'))
+
+    if not fullname or not role_id:
+        return jsonify({'ok': False, 'error': 'missing_required_fields'}), 400
+
+    if not db.session.get(Role, role_id):
+        return jsonify({'ok': False, 'error': 'invalid_role'}), 400
+
+    phone = digits_only(clean_form_value(data, 'phone'))
+    if phone and not valid_phone(phone):
+        return jsonify({
+            'ok': False,
+            'error': 'invalid_phone',
+            'message': 'Phone number must contain exactly 11 digits.'
+        }), 400
+
+    # Never let an admin lock themselves out of the admin module.
+    if user.id == session.get('user_id'):
+        admin_role = Role.query.filter_by(name=ROLE_ADMIN).first()
+        if admin_role and role_id != admin_role.id:
+            return jsonify({
+                'ok': False,
+                'error': 'cannot_change_own_role',
+                'message': 'You cannot change your own role.'
+            }), 400
+
+    user.fullname = fullname
+    user.role_id = role_id
+    user.rank = clean_form_value(data, 'rank')
+    user.email = clean_form_value(data, 'email')
+    user.phone = phone or None
+    user.location_type = clean_form_value(data, 'location_type')
+    user.department_id = parse_int_arg(data.get('department_id'))
+    user.unit_id = parse_int_arg(data.get('unit_id'))
+    user.updated_at = datetime.utcnow()
+
+    new_password = data.get('password') or ''
+    if new_password:
+        if len(new_password) < 6:
+            return jsonify({
+                'ok': False,
+                'error': 'weak_password',
+                'message': 'Password must be at least 6 characters.'
+            }), 400
+        user.set_password(new_password)
+
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/admin/users/<int:user_id>/toggle', methods=['POST'])
+def api_toggle_user(user_id):
+    gate = require_api_admin_session()
+    if gate:
+        return gate
+
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'ok': False, 'error': 'user_not_found'}), 404
+
+    if user.id == session.get('user_id'):
+        return jsonify({
+            'ok': False,
+            'error': 'cannot_disable_self',
+            'message': 'You cannot disable your own account.'
+        }), 400
+
+    user.active = not user.active
+    db.session.commit()
+    return jsonify({'ok': True, 'active': user.active})
+
+@app.route('/api/admin/users/<int:user_id>/delete', methods=['POST'])
+def api_delete_user(user_id):
+    gate = require_api_admin_session()
+    if gate:
+        return gate
+
+    user = db.session.get(User, user_id)
+    if not user:
+        return jsonify({'ok': False, 'error': 'user_not_found'}), 404
+
+    if user.id == session.get('user_id'):
+        return jsonify({
+            'ok': False,
+            'error': 'cannot_delete_self',
+            'message': 'You cannot delete your own account.'
+        }), 400
+
+    db.session.delete(user)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/admin/roles', methods=['POST'])
+def api_create_role():
+    gate = require_api_admin_session()
+    if gate:
+        return gate
+
+    data = request.form
+    name = clean_form_value(data, 'name')
+    if not name:
+        return jsonify({'ok': False, 'error': 'missing_required_fields'}), 400
+
+    if Role.query.filter(func.lower(Role.name) == name.lower()).first():
+        return jsonify({'ok': False, 'error': 'role_exists'}), 409
+
+    landing = clean_form_value(data, 'landing_endpoint') or 'checkin'
+    if landing not in app.view_functions:
+        return jsonify({
+            'ok': False,
+            'error': 'invalid_landing',
+            'message': 'Landing endpoint does not exist.'
+        }), 400
+
+    role = Role(
+        name=name,
+        description=clean_form_value(data, 'description'),
+        landing_endpoint=landing
+    )
+    db.session.add(role)
+    db.session.commit()
+    return jsonify({'ok': True, 'role_id': role.id})
+
+@app.route('/api/admin/roles/<int:role_id>/update', methods=['POST'])
+def api_update_role(role_id):
+    gate = require_api_admin_session()
+    if gate:
+        return gate
+
+    role = db.session.get(Role, role_id)
+    if not role:
+        return jsonify({'ok': False, 'error': 'role_not_found'}), 404
+
+    data = request.form
+    name = clean_form_value(data, 'name')
+    if not name:
+        return jsonify({'ok': False, 'error': 'missing_required_fields'}), 400
+
+    clash = Role.query.filter(
+        func.lower(Role.name) == name.lower(), Role.id != role.id
+    ).first()
+    if clash:
+        return jsonify({'ok': False, 'error': 'role_exists'}), 409
+
+    landing = clean_form_value(data, 'landing_endpoint') or 'checkin'
+    if landing not in app.view_functions:
+        return jsonify({
+            'ok': False,
+            'error': 'invalid_landing',
+            'message': 'Landing endpoint does not exist.'
+        }), 400
+
+    role.name = name
+    role.description = clean_form_value(data, 'description')
+    role.landing_endpoint = landing
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/admin/roles/<int:role_id>/delete', methods=['POST'])
+def api_delete_role(role_id):
+    gate = require_api_admin_session()
+    if gate:
+        return gate
+
+    role = db.session.get(Role, role_id)
+    if not role:
+        return jsonify({'ok': False, 'error': 'role_not_found'}), 404
+
+    if role.name in (ROLE_ADMIN, ROLE_OFFICER):
+        return jsonify({
+            'ok': False,
+            'error': 'protected_role',
+            'message': 'Built-in roles cannot be deleted.'
+        }), 400
+
+    if User.query.filter_by(role_id=role.id).count():
+        return jsonify({
+            'ok': False,
+            'error': 'role_in_use',
+            'message': 'Reassign users before deleting this role.'
+        }), 409
+
+    db.session.delete(role)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/admin/locations', methods=['POST'])
+def api_create_location():
+    gate = require_api_admin_session()
+    if gate:
+        return gate
+
+    data = request.form
+    name = normalize_name(clean_form_value(data, 'name'))
+    loc_type = clean_form_value(data, 'type')
+    if not name or not loc_type:
+        return jsonify({'ok': False, 'error': 'missing_required_fields'}), 400
+
+    if loc_type not in ('department', 'command', 'unit'):
+        return jsonify({'ok': False, 'error': 'invalid_type'}), 400
+
+    parent_id = parse_int_arg(data.get('parent_id'))
+    if parent_id and not db.session.get(Location, parent_id):
+        return jsonify({'ok': False, 'error': 'invalid_parent'}), 400
+
+    location = Location(name=name, type=loc_type, parent_id=parent_id)
+    db.session.add(location)
+    db.session.commit()
+    return jsonify({'ok': True, 'location_id': location.id})
+
+@app.route('/api/admin/locations/<int:location_id>/delete', methods=['POST'])
+def api_delete_location(location_id):
+    gate = require_api_admin_session()
+    if gate:
+        return gate
+
+    location = db.session.get(Location, location_id)
+    if not location:
+        return jsonify({'ok': False, 'error': 'location_not_found'}), 404
+
+    if Location.query.filter_by(parent_id=location.id).count():
+        return jsonify({
+            'ok': False,
+            'error': 'location_has_children',
+            'message': 'Remove child locations first.'
+        }), 409
+
+    db.session.delete(location)
+    db.session.commit()
+    return jsonify({'ok': True})
+
+@app.route('/api/admin/stats')
+def api_admin_stats():
+    gate = require_api_admin_session()
+    if gate:
+        return gate
+
+    today = date.today()
+    return jsonify({
+        'ok': True,
+        'stats': {
+            'visitors_total': Visitor.query.count(),
+            'visits_total': Visit.query.count(),
+            'visits_today': Visit.query.filter(Visit.date == today).count(),
+            'active_visits': Visit.query.filter(Visit.status == 'in').count(),
+            'users_total': User.query.count(),
+            'users_active': User.query.filter(User.active.is_(True)).count()
+        }
+    })
 
 @app.route('/visits/today')
 def visits_today():
@@ -385,6 +996,139 @@ def list_visits():
 
     visits = query.limit(150).all()
     return jsonify({'ok': True, 'visits': [visit_to_dict(visit) for visit in visits]})
+
+def parse_date_arg(value):
+    value = (value or '').strip()
+    if not value:
+        return None
+    try:
+        return datetime.strptime(value, '%Y-%m-%d').date()
+    except ValueError:
+        return None
+
+def parse_int_arg(value):
+    value = (value or '').strip()
+    if not value:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+def build_history_query(args):
+    """Build the filtered Visit query used by the history page and its API."""
+    query = Visit.query.join(Visitor, Visitor.id == Visit.visitor_id)
+
+    q = (args.get('q') or '').strip()
+    if q:
+        like = f"%{q}%"
+        query = query.filter(
+            (Visitor.fullname.ilike(like)) |
+            (Visitor.phone.ilike(like)) |
+            (Visit.visit_no.ilike(like)) |
+            (Visit.host_name.ilike(like)) |
+            (Visit.destination.ilike(like))
+        )
+
+    status = (args.get('status') or '').strip()
+    if status in ('in', 'out'):
+        query = query.filter(Visit.status == status)
+
+    purpose = (args.get('purpose') or '').strip()
+    if purpose in ('official', 'personal'):
+        query = query.filter(Visit.purpose == purpose)
+
+    year = parse_int_arg(args.get('year'))
+    if year:
+        query = query.filter(func.strftime('%Y', Visit.date) == f"{year:04d}")
+
+    month = parse_int_arg(args.get('month'))
+    if month and 1 <= month <= 12:
+        query = query.filter(func.strftime('%m', Visit.date) == f"{month:02d}")
+
+    date_from = parse_date_arg(args.get('date_from'))
+    if date_from:
+        query = query.filter(Visit.date >= date_from)
+
+    date_to = parse_date_arg(args.get('date_to'))
+    if date_to:
+        query = query.filter(Visit.date <= date_to)
+
+    return query
+
+@app.route('/visits/history')
+def visits_history():
+    gate = require_officer_session()
+    if gate:
+        return gate
+
+    filters = {
+        'q': (request.args.get('q') or '').strip(),
+        'status': (request.args.get('status') or '').strip(),
+        'purpose': (request.args.get('purpose') or '').strip(),
+        'month': (request.args.get('month') or '').strip(),
+        'year': (request.args.get('year') or '').strip(),
+        'date_from': (request.args.get('date_from') or '').strip(),
+        'date_to': (request.args.get('date_to') or '').strip()
+    }
+
+    query = build_history_query(request.args)
+    total = query.count()
+    visits = query.order_by(Visit.signin_time.desc()).limit(500).all()
+
+    rows = []
+    for v in visits:
+        visitor = db.session.get(Visitor, v.visitor_id)
+        rows.append({
+            'visit_no': v.visit_no,
+            'fullname': visitor.fullname if visitor else '',
+            'phone': visitor.phone if visitor else '',
+            'purpose': v.purpose,
+            'host_name': v.host_name or '',
+            'destination': v.destination or '',
+            'status': v.status,
+            'date': v.date.strftime('%Y-%m-%d') if v.date else '',
+            'signin_time': v.signin_time.strftime('%H:%M') if v.signin_time else '',
+            'signout_time': v.signout_time.strftime('%H:%M') if v.signout_time else '',
+            'created_by': v.created_by or '',
+            'signed_out_by': v.signed_out_by or ''
+        })
+
+    # Distinct years present in the data, for the year dropdown.
+    year_rows = db.session.query(
+        func.strftime('%Y', Visit.date)
+    ).distinct().order_by(func.strftime('%Y', Visit.date).desc()).all()
+    years = [int(r[0]) for r in year_rows if r[0]]
+
+    summary = {
+        'total': total,
+        'shown': len(rows),
+        'in': sum(1 for r in rows if r['status'] == 'in'),
+        'out': sum(1 for r in rows if r['status'] == 'out')
+    }
+
+    return render_template(
+        'visits_history.html',
+        visits=rows,
+        filters=filters,
+        years=years,
+        summary=summary
+    )
+
+@app.route('/api/visits/history')
+def api_visits_history():
+    gate = require_api_officer_session()
+    if gate:
+        return gate
+
+    query = build_history_query(request.args)
+    total = query.count()
+    visits = query.order_by(Visit.signin_time.desc()).limit(500).all()
+    return jsonify({
+        'ok': True,
+        'total': total,
+        'visits': [visit_to_dict(v) for v in visits]
+    })
 
 @app.route('/api/visitor/search')
 def search_visitor():
@@ -451,12 +1195,20 @@ def update_visitor(visitor_id):
         return jsonify({'ok': False, 'error': 'visitor_not_found'}), 404
 
     data = request.form
-    fullname = clean_form_value(data, 'fullname')
-    phone = clean_form_value(data, 'phone')
+    fullname = normalize_name(clean_form_value(data, 'fullname'))
+    raw_phone = clean_form_value(data, 'phone')
+    phone = digits_only(raw_phone)
     email = clean_form_value(data, 'email')
 
-    if not fullname or not phone:
+    if not fullname or not raw_phone:
         return jsonify({'ok': False, 'error': 'missing_required_fields'}), 400
+
+    if not valid_phone(phone):
+        return jsonify({
+            'ok': False,
+            'error': 'invalid_phone',
+            'message': 'Phone number must contain exactly 11 digits.'
+        }), 400
 
     phone_owner = Visitor.query.filter(Visitor.phone == phone, Visitor.id != visitor.id).first()
     if phone_owner:
@@ -593,12 +1345,20 @@ def create_visitor():
         photo_data = data.get('photo_data')
         photo_path = None
         face_fingerprint = None
-        fullname = clean_form_value(data, 'fullname')
-        phone = clean_form_value(data, 'phone')
+        fullname = normalize_name(clean_form_value(data, 'fullname'))
+        raw_phone = clean_form_value(data, 'phone')
+        phone = digits_only(raw_phone)
         email = clean_form_value(data, 'email')
 
-        if not fullname or not phone:
+        if not fullname or not raw_phone:
             return jsonify({'ok': False, 'error': 'missing_required_fields'}), 400
+
+        if not valid_phone(phone):
+            return jsonify({
+                'ok': False,
+                'error': 'invalid_phone',
+                'message': 'Phone number must contain exactly 11 digits.'
+            }), 400
 
         existing = Visitor.query.filter(Visitor.phone == phone).first()
         duplicate_field = 'phone' if existing else None

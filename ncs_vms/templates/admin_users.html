@@ -1,0 +1,233 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h3 class="mb-0">User Management</h3>
+  <button class="btn btn-primary btn-sm" onclick="openCreateUser()">Add User</button>
+</div>
+
+<div id="userAlert" class="alert" style="display:none;"></div>
+
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle">
+    <thead>
+      <tr>
+        <th>Service No</th>
+        <th>Full Name</th>
+        <th>Rank</th>
+        <th>Role</th>
+        <th>Phone</th>
+        <th>Status</th>
+        <th>Last Login</th>
+        <th class="text-end">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for u in users %}
+      <tr>
+        <td>{{ u.service_no }}</td>
+        <td>{{ u.fullname }}</td>
+        <td>{{ u.rank }}</td>
+        <td><span class="badge bg-info text-dark">{{ u.role_name }}</span></td>
+        <td>{{ u.phone }}</td>
+        <td>
+          {% if u.active %}
+          <span class="badge bg-success">Active</span>
+          {% else %}
+          <span class="badge bg-danger">Disabled</span>
+          {% endif %}
+        </td>
+        <td class="small text-muted">{{ u.last_login_at }}</td>
+        <td class="text-end text-nowrap">
+          <button class="btn btn-sm btn-outline-primary"
+            data-user='{{ u | tojson }}'
+            onclick="openEditUser(this)">Edit</button>
+          <button class="btn btn-sm btn-outline-warning"
+            data-id="{{ u.id }}"
+            data-action="toggle"
+            onclick="userAction(this, 'toggle')">{{ 'Disable' if u.active else 'Enable' }}</button>
+          <button class="btn btn-sm btn-outline-danger"
+            data-id="{{ u.id }}"
+            data-name="{{ u.fullname }}"
+            onclick="userAction(this, 'delete')">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not users %}
+      <tr><td colspan="8" class="text-center text-muted py-3">No users found.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="modal fade" id="userModal" tabindex="-1" aria-labelledby="userModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title h4 fw-bold" id="userModalLabel">Add User</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4">
+        <form id="userForm" onsubmit="return saveUser(event)">
+          <input type="hidden" id="userId" name="user_id">
+          <div class="row g-2">
+            <div class="col-md-4">
+              <label class="form-label">Service No</label>
+              <input class="form-control" id="userServiceNo" name="service_no" required>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">Full Name</label>
+              <input class="form-control text-uppercase" name="fullname" required>
+            </div>
+            <div class="col-md-3">
+              <label class="form-label">Rank</label>
+              <input class="form-control" name="rank">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Role</label>
+              <select class="form-select" name="role_id" id="userRole" required>
+                <option value="">Select role</option>
+                {% for r in roles %}
+                <option value="{{ r.id }}">{{ r.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Email</label>
+              <input class="form-control" type="email" name="email">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Phone</label>
+              <input class="form-control" name="phone" inputmode="numeric" maxlength="11"
+                     pattern="\d{11}" title="11 digits">
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Location Type</label>
+              <select class="form-select" name="location_type">
+                <option value="">Select</option>
+                <option value="HQ">HQ</option>
+                <option value="Command">Command</option>
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label">Department</label>
+              <select class="form-select" name="department_id">
+                <option value="">Select</option>
+                {% for l in locations %}
+                <option value="{{ l.id }}">{{ l.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="col-md-4">
+              <label class="form-label" id="passwordLabel">Password</label>
+              <input class="form-control" type="password" name="password" id="userPassword"
+                     autocomplete="new-password">
+              <div class="form-text" id="passwordHelp">Minimum 6 characters.</div>
+            </div>
+          </div>
+          <div class="mt-3 d-flex gap-2 align-items-center">
+            <button class="btn btn-primary" type="submit">Save User</button>
+            <button class="btn btn-outline-secondary" type="button" data-bs-dismiss="modal">Cancel</button>
+            <span id="userFormStatus" class="small"></span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const userModalEl = document.getElementById('userModal');
+const userModal = new bootstrap.Modal(userModalEl);
+const userForm = document.getElementById('userForm');
+
+function showUserAlert(message, kind) {
+  const el = document.getElementById('userAlert');
+  el.className = 'alert alert-' + (kind || 'success');
+  el.innerText = message;
+  el.style.display = 'block';
+  window.setTimeout(function () { el.style.display = 'none'; }, 4000);
+}
+
+function openCreateUser() {
+  userForm.reset();
+  document.getElementById('userId').value = '';
+  document.getElementById('userModalLabel').innerText = 'Add User';
+  document.getElementById('userServiceNo').readOnly = false;
+  document.getElementById('passwordLabel').innerText = 'Password';
+  document.getElementById('passwordHelp').innerText = 'Minimum 6 characters.';
+  userForm.querySelector('[name=password]').required = true;
+  document.getElementById('userFormStatus').innerText = '';
+  userModal.show();
+}
+
+function openEditUser(button) {
+  const u = JSON.parse(button.dataset.user);
+  userForm.reset();
+  document.getElementById('userId').value = u.id;
+  document.getElementById('userModalLabel').innerText = 'Edit User';
+  document.getElementById('userServiceNo').value = u.service_no;
+  document.getElementById('userServiceNo').readOnly = true;
+  userForm.querySelector('[name=fullname]').value = u.fullname;
+  userForm.querySelector('[name=rank]').value = u.rank;
+  userForm.querySelector('[name=email]').value = u.email;
+  userForm.querySelector('[name=phone]').value = u.phone;
+  document.getElementById('userRole').value = u.role_id;
+  document.getElementById('passwordLabel').innerText = 'New Password (optional)';
+  document.getElementById('passwordHelp').innerText = 'Leave blank to keep the current password.';
+  userForm.querySelector('[name=password]').required = false;
+  document.getElementById('userFormStatus').innerText = '';
+  userModal.show();
+}
+
+function saveUser(e) {
+  e.preventDefault();
+  const id = document.getElementById('userId').value;
+  const fd = new FormData(userForm);
+  const url = id ? '/api/admin/users/' + id + '/update' : '/api/admin/users';
+  const status = document.getElementById('userFormStatus');
+  const submitBtn = userForm.querySelector('button[type=submit]');
+
+  submitBtn.disabled = true;
+  status.className = 'small text-muted';
+  status.innerText = 'Saving...';
+
+  fetch(url, { method: 'POST', body: fd })
+    .then(r => r.json().then(d => ({ status: r.status, d })))
+    .then(function (res) {
+      const d = res.d;
+      if (d.ok) {
+        window.location.reload();
+        return;
+      }
+      status.className = 'small text-danger';
+      status.innerText = d.message || d.error || 'Unable to save user.';
+      submitBtn.disabled = false;
+    })
+    .catch(function () {
+      status.className = 'small text-danger';
+      status.innerText = 'Network error.';
+      submitBtn.disabled = false;
+    });
+  return false;
+}
+
+function userAction(button, action) {
+  const id = button.dataset.id;
+  if (action === 'delete') {
+    if (!window.confirm('Delete user "' + button.dataset.name + '"? This cannot be undone.')) return;
+  }
+  fetch('/api/admin/users/' + id + '/' + action, { method: 'POST' })
+    .then(r => r.json())
+    .then(function (d) {
+      if (d.ok) {
+        window.location.reload();
+      } else {
+        showUserAlert(d.message || d.error || 'Action failed.', 'danger');
+      }
+    })
+    .catch(function () { showUserAlert('Network error.', 'danger'); });
+}
+</script>
+{% endblock %}

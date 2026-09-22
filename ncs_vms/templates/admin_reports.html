@@ -1,0 +1,147 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h3 class="mb-0">Visit Reports</h3>
+  <span class="text-muted small">Showing {{ shown }} of {{ total }} record(s)</span>
+</div>
+
+<div class="card mb-3">
+  <div class="card-body">
+    <form method="get" action="{{ url_for('admin_reports') }}">
+      <div class="row g-2 align-items-end">
+        <div class="col-lg-4 col-md-6">
+          <label class="form-label" for="q">Search</label>
+          <input type="text" id="q" name="q" class="form-control"
+                 placeholder="Name, phone, visit no, host or destination" value="{{ filters.q }}">
+        </div>
+        <div class="col-lg-2 col-md-3 col-6">
+          <label class="form-label" for="status">Status</label>
+          <select id="status" name="status" class="form-select">
+            <option value="" {% if not filters.status %}selected{% endif %}>All</option>
+            <option value="in" {% if filters.status == 'in' %}selected{% endif %}>Signed In</option>
+            <option value="out" {% if filters.status == 'out' %}selected{% endif %}>Signed Out</option>
+          </select>
+        </div>
+        <div class="col-lg-2 col-md-3 col-6">
+          <label class="form-label" for="purpose">Purpose</label>
+          <select id="purpose" name="purpose" class="form-select">
+            <option value="" {% if not filters.purpose %}selected{% endif %}>All</option>
+            <option value="official" {% if filters.purpose == 'official' %}selected{% endif %}>Official</option>
+            <option value="personal" {% if filters.purpose == 'personal' %}selected{% endif %}>Personal</option>
+          </select>
+        </div>
+        <div class="col-lg-2 col-md-3 col-6">
+          <label class="form-label" for="month">Month</label>
+          <select id="month" name="month" class="form-select">
+            <option value="" {% if not filters.month %}selected{% endif %}>All</option>
+            {% for m in range(1, 13) %}
+            <option value="{{ m }}" {% if filters.month == m|string %}selected{% endif %}>
+              {{ ['January','February','March','April','May','June','July','August','September','October','November','December'][m-1] }}
+            </option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="col-lg-2 col-md-3 col-6">
+          <label class="form-label" for="year">Year</label>
+          <select id="year" name="year" class="form-select">
+            <option value="" {% if not filters.year %}selected{% endif %}>All</option>
+            {% for y in years %}
+            <option value="{{ y }}" {% if filters.year == y|string %}selected{% endif %}>{{ y }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+      <div class="row g-2 align-items-end mt-1">
+        <div class="col-lg-3 col-md-4 col-6">
+          <label class="form-label" for="date_from">From date</label>
+          <input type="date" id="date_from" name="date_from" class="form-control" value="{{ filters.date_from }}">
+        </div>
+        <div class="col-lg-3 col-md-4 col-6">
+          <label class="form-label" for="date_to">To date</label>
+          <input type="date" id="date_to" name="date_to" class="form-control" value="{{ filters.date_to }}">
+        </div>
+        <div class="col-lg-6 col-md-4 d-flex flex-wrap gap-2">
+          <button class="btn btn-primary" type="submit">Apply Filters</button>
+          <a class="btn btn-outline-secondary" href="{{ url_for('admin_reports') }}">Reset</a>
+          <button class="btn btn-outline-success" type="button" onclick="exportCsv()">Export CSV</button>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle" id="reportTable">
+    <thead>
+      <tr>
+        <th>Date</th>
+        <th>Visit No</th>
+        <th>Visitor</th>
+        <th>Phone</th>
+        <th>Purpose</th>
+        <th>Host</th>
+        <th>Destination</th>
+        <th>Status</th>
+        <th>Sign-in</th>
+        <th>Sign-out</th>
+        <th>Officer</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in visits %}
+      <tr>
+        <td>{{ v.date }}</td>
+        <td>{{ v.visit_no }}</td>
+        <td>{{ v.fullname }}</td>
+        <td>{{ v.phone }}</td>
+        <td>{{ v.purpose }}</td>
+        <td>{{ v.host_name }}</td>
+        <td>{{ v.destination }}</td>
+        <td>
+          {% if v.status == 'in' %}
+          <span class="badge bg-success">In</span>
+          {% else %}
+          <span class="badge bg-secondary">Out</span>
+          {% endif %}
+        </td>
+        <td>{{ v.signin_time }}</td>
+        <td>{{ v.signout_time }}</td>
+        <td>{{ v.created_by }}</td>
+      </tr>
+      {% endfor %}
+      {% if not visits %}
+      <tr><td colspan="11" class="text-center text-muted py-4">No visits match the selected filters.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function exportCsv() {
+  const table = document.getElementById('reportTable');
+  const rows = [];
+  table.querySelectorAll('tr').forEach(function (tr) {
+    const cells = [];
+    tr.querySelectorAll('th, td').forEach(function (cell) {
+      let text = cell.innerText.replace(/\s+/g, ' ').trim();
+      if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+        text = '"' + text.replace(/"/g, '""') + '"';
+      }
+      cells.push(text);
+    });
+    if (cells.length) rows.push(cells.join(','));
+  });
+  const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = 'visit_report.csv';
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+</script>
+{% endblock %}

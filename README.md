@@ -24,6 +24,42 @@ The application includes:
 - SQLite persistence for local development
 - Flask templates and static frontend assets
 
+## Users, Roles and Modules
+
+Authentication is database-backed. Every user belongs to a role, and each role
+defines the **landing module** the user is redirected to after login.
+
+| Role | Landing module | Access |
+| --- | --- | --- |
+| Admin | `/admin/dashboard` | Dashboard, users, roles, locations, reports, plus the reception module |
+| Officer | `/checkin` | Reception check-in, today's visits and visit history only |
+
+Roles are stored in the `role` table and are manageable from the admin module,
+so additional roles can be created without code changes. The built-in `Admin`
+and `Officer` roles cannot be deleted.
+
+User passwords are stored as salted hashes (Werkzeug `scrypt`), never in plain
+text.
+
+### Admin Module
+
+- **Dashboard** — visitor, visit, user and location counts, plus recent visits
+- **Users** — create, edit, enable/disable and delete users; assign roles
+- **Roles** — create and edit roles, including their landing module
+- **Locations** — manage departments, commands and units
+- **Reports** — filterable visit reports with CSV export
+
+Admins cannot disable, delete or demote their own account, preventing lockout.
+
+### Default Admin
+
+On first run, if no users exist, an admin account is created:
+
+- Service No: `DEFAULT_ADMIN_SERVICE_NO` (default `ADMIN`)
+- Password: `DEFAULT_ADMIN_PASSWORD` (default `NCS-1234`)
+
+Change these before any real deployment.
+
 ## Backend Records
 
 Visitor and visit records are stored in the local SQLite database under `instance/`.
@@ -38,6 +74,16 @@ Authenticated desk officers can use these JSON endpoints:
 - `GET /api/visitor/<id>/photo` returns the stored portrait
 - `GET /api/visits` lists recent visit records
 - `GET /api/visits?status=in` lists active visits
+- `GET /api/visits/history` filtered visit history (search, status, purpose, month, year, date range)
+
+Admin-only endpoints live under `/api/admin/` and return `403` for non-admin users.
+
+## Data Validation
+
+- Visitor names are stored uppercase, with collapsed whitespace
+- Phone numbers accept digits only and must be exactly 11 digits
+- Passwords must be at least 6 characters
+- A visitor cannot hold two active visits on the same day
 
 ## Architecture
 
@@ -83,9 +129,10 @@ python ncs_vms/app.py
 
 The app runs on <http://localhost:5100> by default. Override the port with `PORT`.
 
-Desk officers sign in from the landing page login modal before visitor records can be
-captured. Use a Service No and the configured Password. Set `DESK_OFFICER_CODE`
-to change the default prototype password, which is `NCS-1234`.
+Staff sign in from the landing page login modal using a Service No and password.
+Admins are taken to the admin dashboard; officers are taken to the reception
+check-in screen. See **Users, Roles and Modules** above for the default admin
+credentials and role behaviour.
 
 ## Ngrok Tunnel
 

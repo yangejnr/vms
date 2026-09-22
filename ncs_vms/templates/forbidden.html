@@ -1,0 +1,13 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="card">
+  <div class="card-body text-center py-5">
+    <h3 class="mb-2">Access Denied</h3>
+    <p class="text-muted mb-4">
+      Your account does not have permission to view this module.
+      Contact the system administrator if you believe this is an error.
+    </p>
+    <a class="btn btn-primary" href="{{ url_for('index') }}">Return to my module</a>
+  </div>
+</div>
+{% endblock %}

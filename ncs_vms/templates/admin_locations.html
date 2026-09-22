@@ -1,0 +1,126 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h3 class="mb-0">Locations</h3>
+  <button class="btn btn-primary btn-sm" onclick="openCreateLocation()">Add Location</button>
+</div>
+
+<div id="locationAlert" class="alert" style="display:none;"></div>
+
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle">
+    <thead>
+      <tr>
+        <th>Name</th>
+        <th>Type</th>
+        <th>Parent</th>
+        <th class="text-end">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for l in locations %}
+      <tr>
+        <td>{{ l.name }}</td>
+        <td><span class="badge bg-secondary">{{ l.type }}</span></td>
+        <td>{{ l.parent_name }}</td>
+        <td class="text-end">
+          <button class="btn btn-sm btn-outline-danger"
+            data-id="{{ l.id }}"
+            data-name="{{ l.name }}"
+            onclick="deleteLocation(this)">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+      {% if not locations %}
+      <tr><td colspan="4" class="text-center text-muted py-3">No locations defined yet.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+</div>
+
+<div class="modal fade" id="locationModal" tabindex="-1" aria-labelledby="locationModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title h4 fw-bold" id="locationModalLabel">Add Location</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4">
+        <form id="locationForm" onsubmit="return saveLocation(event)">
+          <div class="mb-3">
+            <label class="form-label">Name</label>
+            <input class="form-control text-uppercase" name="name" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Type</label>
+            <select class="form-select" name="type" required>
+              <option value="">Select type</option>
+              <option value="department">Department</option>
+              <option value="command">Command</option>
+              <option value="unit">Unit</option>
+            </select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Parent (optional)</label>
+            <select class="form-select" name="parent_id">
+              <option value="">None</option>
+              {% for l in locations %}
+              <option value="{{ l.id }}">{{ l.name }} ({{ l.type }})</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="d-flex gap-2 align-items-center">
+            <button class="btn btn-primary" type="submit">Save Location</button>
+            <span id="locationFormStatus" class="small"></span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const locationModal = new bootstrap.Modal(document.getElementById('locationModal'));
+const locationForm = document.getElementById('locationForm');
+
+function showLocationAlert(message, kind) {
+  const el = document.getElementById('locationAlert');
+  el.className = 'alert alert-' + (kind || 'success');
+  el.innerText = message;
+  el.style.display = 'block';
+  window.setTimeout(function () { el.style.display = 'none'; }, 4000);
+}
+
+function openCreateLocation() {
+  locationForm.reset();
+  document.getElementById('locationFormStatus').innerText = '';
+  locationModal.show();
+}
+
+function saveLocation(e) {
+  e.preventDefault();
+  const status = document.getElementById('locationFormStatus');
+  fetch('/api/admin/locations', { method: 'POST', body: new FormData(locationForm) })
+    .then(r => r.json())
+    .then(function (d) {
+      if (d.ok) { window.location.reload(); return; }
+      status.className = 'small text-danger';
+      status.innerText = d.message || d.error || 'Unable to save location.';
+    })
+    .catch(function () { status.className = 'small text-danger'; status.innerText = 'Network error.'; });
+  return false;
+}
+
+function deleteLocation(button) {
+  if (!window.confirm('Delete location "' + button.dataset.name + '"?')) return;
+  fetch('/api/admin/locations/' + button.dataset.id + '/delete', { method: 'POST' })
+    .then(r => r.json())
+    .then(function (d) {
+      if (d.ok) { window.location.reload(); }
+      else { showLocationAlert(d.message || d.error || 'Delete failed.', 'danger'); }
+    });
+}
+</script>
+{% endblock %}

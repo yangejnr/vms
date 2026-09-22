@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h3 class="mb-0">Admin Dashboard</h3>
+  <span class="text-muted small">Signed in as {{ session.get('user_name', '') }} ({{ session.get('role', '') }})</span>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small">Visitors Registered</div>
+        <div class="fs-3 fw-bold">{{ stats.visitors_total }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small">Total Visits</div>
+        <div class="fs-3 fw-bold">{{ stats.visits_total }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small">Visits Today</div>
+        <div class="fs-3 fw-bold">{{ stats.visits_today }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small">Currently On Site</div>
+        <div class="fs-3 fw-bold text-success">{{ stats.active_visits }}</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small">System Users</div>
+        <div class="fs-3 fw-bold">{{ stats.users_total }}</div>
+        <div class="small text-muted">{{ stats.users_active }} active</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small">Roles</div>
+        <div class="fs-3 fw-bold">{{ stats.roles_total }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small">Locations</div>
+        <div class="fs-3 fw-bold">{{ stats.locations_total }}</div>
+      </div>
+    </div>
+  </div>
+  <div class="col-6 col-lg-3">
+    <div class="card h-100">
+      <div class="card-body">
+        <div class="text-muted small">Quick Actions</div>
+        <div class="d-flex flex-column gap-1 mt-1">
+          <a class="small" href="{{ url_for('admin_users') }}">Manage users</a>
+          <a class="small" href="{{ url_for('admin_reports') }}">View reports</a>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <h5 class="mb-3">Recent Visits</h5>
+    <div class="table-responsive">
+      <table class="table table-sm table-striped align-middle mb-0">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Visit No</th>
+            <th>Visitor</th>
+            <th>Purpose</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in recent_visits %}
+          <tr>
+            <td>{{ v.date }}</td>
+            <td>{{ v.visit_no }}</td>
+            <td>{{ v.fullname }}</td>
+            <td>{{ v.purpose }}</td>
+            <td>
+              {% if v.status == 'in' %}
+              <span class="badge bg-success">In</span>
+              {% else %}
+              <span class="badge bg-secondary">Out</span>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+          {% if not recent_visits %}
+          <tr><td colspan="5" class="text-center text-muted py-3">No visits recorded yet.</td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endblock %}

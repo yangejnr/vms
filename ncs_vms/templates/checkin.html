@@ -123,11 +123,13 @@
           <div class="row mb-2">
             <div class="col-md-6">
               <label>Full Name</label>
-              <input name="fullname" class="form-control" required>
+              <input name="fullname" class="form-control text-uppercase" required>
             </div>
             <div class="col-md-3">
               <label>Phone</label>
-              <input id="visitorPhone" name="phone" class="form-control" onblur="lookupExistingVisitor(this.value)" required>
+              <input id="visitorPhone" name="phone" class="form-control" inputmode="numeric"
+                     maxlength="11" pattern="\d{11}" title="Enter exactly 11 digits"
+                     placeholder="11 digits" onblur="lookupExistingVisitor(this.value)" required>
             </div>
             <div class="col-md-3">
               <label>Email (optional)</label>
@@ -314,6 +316,32 @@ function toggleGroup() {
   const v = document.getElementById('groupVisit').value;
   document.getElementById('groupSizeDiv').style.display = v === 'yes' ? 'block' : 'none';
 }
+
+// Phone fields accept digits only, capped at 11.
+function attachPhoneGuard(input) {
+  if (!input) return;
+  input.addEventListener('input', function () {
+    const cleaned = input.value.replace(/\D/g, '').slice(0, 11);
+    if (cleaned !== input.value) input.value = cleaned;
+  });
+}
+
+attachPhoneGuard(document.getElementById('visitorPhone'));
+
+// Names are stored and displayed uppercase.
+function attachUpperGuard(input) {
+  if (!input) return;
+  input.addEventListener('input', function () {
+    const start = input.selectionStart;
+    const upper = input.value.toUpperCase();
+    if (upper !== input.value) {
+      input.value = upper;
+      input.setSelectionRange(start, start);
+    }
+  });
+}
+
+attachUpperGuard(document.querySelector('#newVisitorForm [name=fullname]'));
 
 function toggleVisitPurposeFields() {
   const isPersonal = document.getElementById('visitPurpose').value === 'personal';
@@ -546,6 +574,8 @@ function createVisitor(e) {
         document.getElementById('newVisitorStatus').innerText = '';
         setCameraState('match-found', 'Visitor already exists by ' + (d.duplicate_field || 'record') + '. Continue with visit details.');
         handleSearchResult({ found: true, visitor: d.visitor, history: d.history || [] });
+      } else if (d.error === 'invalid_phone') {
+        document.getElementById('newVisitorStatus').innerText = d.message || 'Phone number must be exactly 11 digits.';
       } else {
         document.getElementById('newVisitorStatus').innerText = d.error || 'Unable to save visitor.';
       }

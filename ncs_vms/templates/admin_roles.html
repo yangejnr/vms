@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block content %}
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h3 class="mb-0">Roles</h3>
+  <button class="btn btn-primary btn-sm" onclick="openCreateRole()">Add Role</button>
+</div>
+
+<div id="roleAlert" class="alert" style="display:none;"></div>
+
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle">
+    <thead>
+      <tr>
+        <th>Role</th>
+        <th>Description</th>
+        <th>Landing Module</th>
+        <th>Users</th>
+        <th class="text-end">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for r in roles %}
+      <tr>
+        <td><span class="badge bg-info text-dark">{{ r.name }}</span></td>
+        <td>{{ r.description }}</td>
+        <td><code>{{ r.landing_endpoint }}</code></td>
+        <td>{{ r.user_count }}</td>
+        <td class="text-end text-nowrap">
+          <button class="btn btn-sm btn-outline-primary"
+            data-role='{{ r | tojson }}'
+            onclick="openEditRole(this)">Edit</button>
+          <button class="btn btn-sm btn-outline-danger"
+            data-id="{{ r.id }}"
+            data-name="{{ r.name }}"
+            onclick="deleteRole(this)">Delete</button>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+<div class="alert alert-info small">
+  <b>Landing module</b> is the page a user is redirected to after login.
+  Built-in roles (Admin, Officer) cannot be deleted.
+</div>
+
+<div class="modal fade" id="roleModal" tabindex="-1" aria-labelledby="roleModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title h4 fw-bold" id="roleModalLabel">Add Role</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body p-4">
+        <form id="roleForm" onsubmit="return saveRole(event)">
+          <input type="hidden" id="roleId" name="role_id">
+          <div class="mb-3">
+            <label class="form-label">Role Name</label>
+            <input class="form-control" name="name" required>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Description</label>
+            <input class="form-control" name="description">
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Landing Module</label>
+            <select class="form-select" name="landing_endpoint" required>
+              <option value="checkin">Reception (checkin)</option>
+              <option value="admin_dashboard">Admin Dashboard</option>
+              <option value="visits_today">Today's Visits</option>
+              <option value="visits_history">History</option>
+            </select>
+          </div>
+          <div class="d-flex gap-2 align-items-center">
+            <button class="btn btn-primary" type="submit">Save Role</button>
+            <span id="roleFormStatus" class="small"></span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const roleModal = new bootstrap.Modal(document.getElementById('roleModal'));
+const roleForm = document.getElementById('roleForm');
+
+function showRoleAlert(message, kind) {
+  const el = document.getElementById('roleAlert');
+  el.className = 'alert alert-' + (kind || 'success');
+  el.innerText = message;
+  el.style.display = 'block';
+  window.setTimeout(function () { el.style.display = 'none'; }, 4000);
+}
+
+function openCreateRole() {
+  roleForm.reset();
+  document.getElementById('roleId').value = '';
+  document.getElementById('roleModalLabel').innerText = 'Add Role';
+  document.getElementById('roleFormStatus').innerText = '';
+  roleModal.show();
+}
+
+function openEditRole(button) {
+  const r = JSON.parse(button.dataset.role);
+  roleForm.reset();
+  document.getElementById('roleId').value = r.id;
+  document.getElementById('roleModalLabel').innerText = 'Edit Role';
+  roleForm.querySelector('[name=name]').value = r.name;
+  roleForm.querySelector('[name=description]').value = r.description;
+  roleForm.querySelector('[name=landing_endpoint]').value = r.landing_endpoint;
+  document.getElementById('roleFormStatus').innerText = '';
+  roleModal.show();
+}
+
+function saveRole(e) {
+  e.preventDefault();
+  const id = document.getElementById('roleId').value;
+  const url = id ? '/api/admin/roles/' + id + '/update' : '/api/admin/roles';
+  const status = document.getElementById('roleFormStatus');
+  fetch(url, { method: 'POST', body: new FormData(roleForm) })
+    .then(r => r.json())
+    .then(function (d) {
+      if (d.ok) { window.location.reload(); return; }
+      status.className = 'small text-danger';
+      status.innerText = d.message || d.error || 'Unable to save role.';
+    })
+    .catch(function () { status.className = 'small text-danger'; status.innerText = 'Network error.'; });
+  return false;
+}
+
+function deleteRole(button) {
+  if (!window.confirm('Delete role "' + button.dataset.name + '"?')) return;
+  fetch('/api/admin/roles/' + button.dataset.id + '/delete', { method: 'POST' })
+    .then(r => r.json())
+    .then(function (d) {
+      if (d.ok) { window.location.reload(); }
+      else { showRoleAlert(d.message || d.error || 'Delete failed.', 'danger'); }
+    });
+}
+</script>
+{% endblock %}
