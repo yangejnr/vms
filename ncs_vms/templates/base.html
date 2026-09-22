@@ -62,10 +62,14 @@
       <a href="{{ url_for('admin_locations') }}" class="btn btn-sm btn-outline-light">Locations</a>
       <a href="{{ url_for('admin_reports') }}" class="btn btn-sm btn-outline-light">Reports</a>
       <a href="{{ url_for('checkin') }}" class="btn btn-sm btn-outline-light">Reception</a>
+      <a href="{{ url_for('verify') }}" class="btn btn-sm btn-outline-light">Verify</a>
+      {% elif session.get('role') == 'Department' %}
+      <a href="{{ url_for('verify') }}" class="btn btn-sm btn-light">Verify Visitor</a>
       {% else %}
       <a href="{{ url_for('checkin') }}" class="btn btn-sm btn-light">Check-In</a>
       <a href="{{ url_for('visits_today') }}" class="btn btn-sm btn-outline-light">Today’s Visits</a>
       <a href="{{ url_for('visits_history') }}" class="btn btn-sm btn-outline-light">History</a>
+      <a href="{{ url_for('verify') }}" class="btn btn-sm btn-outline-light">Verify</a>
       {% endif %}
       <a href="{{ url_for('logout') }}" class="btn btn-sm btn-warning">Logout</a>
     </div>

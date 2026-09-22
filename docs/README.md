@@ -122,6 +122,7 @@ information is included.
 | `10-checkin.png` | Reception check-in page |
 | `11-add-user-modal.png` | Add-user form |
 | `12-officer-checkin.png` | Officer view of check-in |
+| `13-department-verify.png` | Department camera verification screen |
 
 ### Regenerating screenshots
 

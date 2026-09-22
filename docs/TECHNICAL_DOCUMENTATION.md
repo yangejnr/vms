@@ -365,14 +365,16 @@ After a successful login, `start_user_session()` populates:
 
 ### Guards
 
-Four functions enforce access. Each returns `None` on success, or a response to
-return immediately:
+Four guard families enforce access. Each returns `None` on success, or a response
+to return immediately:
 
 | Guard | Use | Failure |
 | --- | --- | --- |
-| `require_officer_session()` | Page routes needing any login | Redirect to `/` |
+| `require_officer_session()` | Pages needing any login | Redirect to `/` |
+| `require_reception_session()` | Reception pages (not department) | Redirect to `/` or `/verify` |
 | `require_admin_session()` | Admin pages | Redirect, or 403 page |
 | `require_api_officer_session()` | JSON APIs needing any login | 401 JSON |
+| `require_api_reception_session()` | Reception JSON APIs | 401 or 403 JSON |
 | `require_api_admin_session()` | Admin JSON APIs | 401 or 403 JSON |
 
 Usage pattern:
@@ -385,6 +387,22 @@ def admin_users():
         return gate
     ...
 ```
+
+### Role scoping
+
+| Role | Can reach |
+| --- | --- |
+| `Admin` | Everything |
+| `Officer` | Reception pages and APIs, plus `/verify` |
+| `Department` | **`/verify` and the verification APIs only** |
+
+Department accounts are deliberately blocked from visitor records. `checkin`,
+`visits_today`, `visits_history` and every visitor/visit API use the *reception*
+guards, which redirect or return 403 for department users.
+
+> **When adding a route:** decide which guard it needs. A new page under the
+> reception module must use `require_reception_session`, not
+> `require_officer_session`, or department stations will be able to reach it.
 
 ### Self-protection rules
 
@@ -562,8 +580,9 @@ require the `Admin` role.
 | GET | `/` | — | Landing page, or redirect if signed in |
 | POST | `/login` | — | Authenticate |
 | GET | `/logout` | — | Clear session |
-| GET | `/checkin` | Officer | Reception check-in UI |
-| GET | `/visits/today` | Officer | Today's visits table |
+| GET | `/checkin` | Reception | Reception check-in UI |
+| GET | `/verify` | Any authenticated | Camera-only visitor verification |
+| GET | `/visits/today` | Reception | Today's visits table |
 | GET | `/visits/history` | Officer | Filterable visit history |
 | GET | `/admin` | Admin | Redirect to dashboard |
 | GET | `/admin/dashboard` | Admin | Admin landing page |
@@ -589,10 +608,44 @@ require the `Admin` role.
 
 | Method | Path | Guard | Purpose |
 | --- | --- | --- | --- |
-| GET | `/api/visits` | Officer | Recent visits (`?status=in`) |
-| GET | `/api/visits/history` | Officer | Filtered history |
-| POST | `/api/visit/create` | Officer | Create a visit and QR slip |
-| POST | `/api/visit/signout` | Officer | Sign a visit out |
+| GET | `/api/visits` | Reception | Recent visits (`?status=in`) |
+| GET | `/api/visits/history` | Reception | Filtered history |
+| POST | `/api/visit/create` | Reception | Create a visit and QR slip |
+| POST | `/api/visit/signout` | Reception | Sign a visit out |
+
+### Verification APIs (department stations)
+
+These are intentionally available to **any authenticated user**, including the
+`Department` role, and return **no personal data**.
+
+| Method | Path | Guard | Purpose |
+| --- | --- | --- | --- |
+| POST | `/api/verify/face` | Any authenticated | Match a frame, return status only |
+| GET | `/api/verify/status` | Any authenticated | Station health check |
+
+`POST /api/verify/face` accepts `photo_data` (a base64 data URL) and returns:
+
+```json
+{
+  "ok": true,
+  "status": "active",
+  "label": "VERIFIED — ON SITE",
+  "message": "Visitor is verified and currently signed in.",
+  "visitor_name": "JOHN DOE",
+  "visit_no": "NCS/26/09/22/0001",
+  "signed_in_at": "09:14",
+  "match_score": 0.97
+}
+```
+
+| `status` | Meaning |
+| --- | --- |
+| `active` | Matched, and the visitor is currently signed in |
+| `inactive` | Matched, but no active visit today |
+| `unknown` | No matching visitor record |
+
+Deliberately **not** returned: phone, email, address, ID numbers, organisation,
+photo URL, or visit history. A test asserts these never appear in the response.
 
 ### Admin APIs
 
@@ -687,42 +740,87 @@ whatever it receives, so the client crop is a convenience, not a security bounda
 **This is not biometric face recognition.** It is perceptual image hashing. Being
 clear about this matters for both security and for anyone extending the feature.
 
-### The algorithm
+### 13.1 The algorithm
 
-Three fingerprints are computed from the processed portrait:
+Fingerprints are computed from the **content-cropped, brightness-normalised**
+portrait, in three parts of 256 bits each (768 bits total):
 
 | Fingerprint | Function | Method |
 | --- | --- | --- |
-| Difference hash | `image_fingerprint` | Resize to 9×8 grey, compare horizontally adjacent pixels → 64 bits |
-| Average hash | `average_fingerprint` | Resize to 8×8 grey, threshold each pixel against the mean → 64 bits |
-| Centre-crop average | `center_fingerprint` | Crop to a centred square, then average hash |
+| Difference hash | `image_fingerprint` | 17×16 grey, compare horizontally adjacent pixels → 256 bits |
+| Average hash | `average_fingerprint` | 16×16 grey, threshold each pixel against the mean → 256 bits |
+| Centre-crop average | `center_fingerprint` | Centred square crop, then average hash → 256 bits |
 
-They are stored as a `|`-separated bit string in `Visitor.face_fingerprint`.
+Two preprocessing steps are essential and were added after measuring the original
+implementation:
 
-### Matching
+1. **`crop_to_content`** — portraits are pasted onto a white 480×600 canvas, so
+   about a third of the image carries no facial information. Hashing the full
+   canvas lets the background dominate the result.
+2. **`normalize_for_hash`** — `autocontrast` before hashing, so uniform brightness
+   changes do not produce a completely different hash for the same person.
 
-`fingerprint_match_distance(probe_fingerprints, stored_value)` returns the minimum
-**Hamming distance** across all probe/stored pairs. Lower is more similar.
+Without these, discrimination collapsed entirely: in testing, the original code
+matched **90 of 90 pairs of different people**.
 
-```python
-if best and best_distance <= 30:   # of 64 bits
-    # reported as a match
-```
+### 13.2 Matching
 
-### Why this is a weak signal
+`fingerprint_match_distance(probe, stored)` returns the **sum** of the Hamming
+distances across the three components.
 
-- It compares **whole-image structure**, not facial features
-- Similar lighting and background can produce false positives
-- Different angles or expressions can produce false negatives
-- The threshold (30/64) is a tuned heuristic, not a calibrated metric
-- **It should never be the sole basis for a security decision**
+> **Sum, not minimum.** An earlier version took the minimum across components,
+> which meant a match only needed one component to be close. Three components each
+> scoring ~25 would report 25 instead of ~75, and almost anyone matched. If you
+> refactor this function, preserve the summation.
 
-### Appropriate use
+Stored values are prefixed with a version marker (`v2:`). A value without the
+current marker returns `None`, which signals callers to rebuild it from the saved
+portrait rather than silently comparing incompatible formats.
 
-It is a **convenience shortcut** for greeting known regular visitors. The reliable
-path is always searching by phone number. If genuine biometric matching is required,
-replace this with a proper face-embedding model (for example a FaceNet-style
-network) and store embeddings with a calibrated distance threshold.
+### 13.3 Measured accuracy
+
+On synthetic test faces (768-bit fingerprints, threshold 60):
+
+| Comparison | Distance |
+| --- | --- |
+| Identical image | 0 |
+| Same person, mild brightness change | up to ~10 |
+| **Different people** | **42 or more** (average ~100) |
+
+With the threshold at 60: **0 false negatives** and roughly **9% false
+positives** on the synthetic set.
+
+### 13.4 Why this is still a weak signal
+
+- It compares **overall image structure**, not facial features
+- Similar lighting, pose and background can still produce a false match
+- Different angles, expressions or strong lighting produce false negatives
+- Brightness *increases* were observed to cause failures even after
+  normalisation, so it is not lighting-invariant
+- The threshold is a tuned heuristic on synthetic data, **not** a calibrated
+  metric on real faces
+- **It must never be the sole basis for a security decision**
+
+### 13.5 Appropriate use
+
+It is a **convenience shortcut** for greeting known regular visitors, and for the
+department verification station it should be treated as a helpful indicator only.
+The reliable path is always searching by phone number at reception.
+
+If genuine biometric matching is required, replace this with a proper face
+embedding model (for example a FaceNet-style network), store embeddings, and
+calibrate a distance threshold against real data.
+
+### 13.6 Changing the algorithm
+
+The seams are:
+
+- `portrait_fingerprints(img)` — produces the stored representation
+- `fingerprint_match_distance(probe, stored)` — scores a candidate
+- `FINGERPRINT_MATCH_THRESHOLD` — the accept/reject boundary
+
+After changing any of these, **bump `FINGERPRINT_VERSION`** so old values are
+rejected and rebuilt, then call `/api/visitors/rebuild-face-index`.
 
 ---
 

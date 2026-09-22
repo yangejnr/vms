@@ -18,9 +18,10 @@
    - 4.4 [The Visitor Slip and QR Code](#44-the-visitor-slip-and-qr-code)
 5. [Today's Visits](#5-todays-visits)
 6. [Visit History](#6-visit-history)
-7. [The Admin Module](#7-the-admin-module)
-8. [Troubleshooting](#8-troubleshooting)
-9. [Glossary](#9-glossary)
+7. [Visitor Verification (Department Stations)](#7-visitor-verification-department-stations)
+8. [The Admin Module](#8-the-admin-module)
+9. [Troubleshooting](#9-troubleshooting)
+10. [Glossary](#10-glossary)
 
 ---
 
@@ -40,6 +41,7 @@ The system has **two modules**, and which one you see depends on your role:
 | Module | Who uses it | What it does |
 | --- | --- | --- |
 | **Reception** | Officers | Day-to-day visitor check-in, sign-out and history |
+| **Verification** | Department staff | Camera-only check that a visitor is signed in |
 | **Admin** | Administrators | Manage users, roles, locations and reports |
 
 ---
@@ -79,6 +81,7 @@ Click **Staff Login**. The login window appears:
 > **Where will I land?**
 > The system sends you to the module that matches your role automatically:
 > - **Officers** go straight to **Visitor Check-In**.
+> - **Department staff** go to the **Visitor Verification** screen.
 > - **Administrators** go to the **Admin Dashboard**.
 
 If your details are not recognised you will see *"Invalid service number or password."*
@@ -250,11 +253,68 @@ active.
 
 ---
 
-## 7. The Admin Module
+## 7. Visitor Verification (Department Stations)
+
+Some departments have a camera at the entrance so staff can confirm that a person
+arriving is a **registered visitor who is signed in** — without a reception officer
+being present.
+
+If you sign in with a **Department** account, you go straight to the verification
+screen and you will see only two menu items: **Verify Visitor** and **Logout**.
+
+![Department verification screen](images/13-department-verify.png)
+
+### How it works
+
+1. The camera starts automatically and the frame turns **green** when it detects a
+   single face.
+2. Verification runs automatically, or you can press **Verify Now**.
+3. The result appears in a large coloured banner:
+
+| Colour | Message | What it means | What to do |
+| --- | --- | --- | --- |
+| 🟩 **Green** | VERIFIED — ON SITE | The visitor is recognised and currently signed in | Allow entry |
+| 🟨 **Amber** | VERIFIED — NOT SIGNED IN | The person is known but has no active visit today | Send them to reception to sign in |
+| 🟥 **Red** | NOT VERIFIED | No matching record found | Send them to reception to register |
+| 🟨 **Amber** | MULTIPLE FACES | More than one person in frame | Ask others to step aside |
+
+The banner also shows the visitor's **name**, their **visit number** and the
+**time they signed in** when there is an active visit.
+
+### The buttons
+
+| Button | Purpose |
+| --- | --- |
+| **Verify Now** | Runs a check immediately, whatever the automatic timer is doing |
+| **Pause Auto-Check** | Stops automatic checking (useful during a crowd). Press again to resume |
+
+### Good practice at the station
+
+- Ask the visitor to look directly at the camera and remove sunglasses or a hat
+- Keep **one person** in the frame at a time
+- Wait for the frame to turn green before relying on the result
+- If a regular visitor is not recognised, send them to reception — the camera is
+  a convenience, not proof of identity
+
+> **Important:** this screen is an aid, not a security guarantee. The photograph
+> matching compares overall image structure and can occasionally be wrong. Treat a
+> red result as "go to reception", and treat a green result as confirmation only
+> when it agrees with what you expect.
+
+### Privacy
+
+This screen deliberately shows **status only**. It does not display phone numbers,
+email addresses, home addresses, ID numbers or visit history — those remain at the
+reception desk. Only the visitor's name and visit reference are shown, so staff can
+confirm the right person is being admitted.
+
+---
+
+## 8. The Admin Module
 
 Administrators see additional menu items. This section is for them.
 
-### 7.1 Dashboard
+### 8.1 Dashboard
 
 ![Admin dashboard](images/03-admin-dashboard.png)
 
@@ -262,7 +322,7 @@ The dashboard summarises the whole system: visitors registered, total visits, vi
 today, who is currently on site, system users, roles and locations. The bottom table
 lists the most recent visits.
 
-### 7.2 Users
+### 8.2 Users
 
 ![User management](images/04-admin-users.png)
 
@@ -288,7 +348,7 @@ in. Prefer disabling over deleting — it preserves the audit trail.
 > **Safety rule:** You cannot disable, delete or change your own role. This prevents
 > locking everyone out of the admin module.
 
-### 7.3 Roles
+### 8.3 Roles
 
 ![Roles](images/05-admin-roles.png)
 
@@ -304,7 +364,7 @@ You can create additional roles for your organisation. Each role needs a name, a
 optional description, and a **Landing Module**. Built-in roles cannot be deleted, and
 a role that still has users assigned cannot be deleted until they are reassigned.
 
-### 7.4 Locations
+### 8.4 Locations
 
 ![Locations](images/06-admin-locations.png)
 
@@ -312,7 +372,7 @@ Define the organisational structure — **Departments**, **Commands** and **Unit
 A location may have a parent, so you can build a hierarchy (for example a unit inside
 a command). A location with children cannot be deleted until its children are removed.
 
-### 7.5 Reports
+### 8.5 Reports
 
 ![Reports](images/07-admin-reports.png)
 
@@ -324,7 +384,7 @@ host in September?"* or *"Who was on site on a particular date?"*
 
 ---
 
-## 8. Troubleshooting
+## 9. Troubleshooting
 
 | Problem | Cause and solution |
 | --- | --- |
@@ -339,7 +399,7 @@ host in September?"* or *"Who was on site on a particular date?"*
 
 ---
 
-## 9. Glossary
+## 10. Glossary
 
 | Term | Meaning |
 | --- | --- |

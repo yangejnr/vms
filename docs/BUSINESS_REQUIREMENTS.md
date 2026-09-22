@@ -364,7 +364,21 @@ Priority: **M** = Must have, **S** = Should have, **C** = Could have.
 | FR-7.9 | The system shall export filtered results to CSV | M |
 | FR-7.10 | The system shall tolerate invalid filter input without error | S |
 
-### 7.8 Administration
+### 7.8 Department verification
+
+| ID | Requirement | Priority |
+| --- | --- | --- |
+| FR-8.12 | The system shall provide a camera-only verification screen for department staff | M |
+| FR-8.13 | The verification screen shall confirm whether a person is a registered visitor | M |
+| FR-8.14 | The verification screen shall report whether the visitor is currently signed in | M |
+| FR-8.15 | The verification screen shall distinguish "on site", "not signed in" and "not verified" | M |
+| FR-8.16 | The verification screen shall operate automatically as a person passes the camera | S |
+| FR-8.17 | The verification screen shall allow a manual check on demand | M |
+| FR-8.18 | The verification screen shall not display visitor contact details, addresses, ID numbers or visit history | M |
+| FR-8.19 | Department staff shall not be able to browse visitor records or visit history | M |
+| FR-8.20 | The verification screen shall warn when more than one face is detected | S |
+
+### 7.9 Administration
 
 | ID | Requirement | Priority |
 | --- | --- | --- |
@@ -494,31 +508,36 @@ added later if required.
 
 ## 10. User Roles and Permissions Matrix
 
-| Capability | Officer | Admin |
-| --- | --- | --- |
-| Sign in | ✅ | ✅ |
-| Register a visitor | ✅ | ✅ |
-| Search for a visitor | ✅ | ✅ |
-| Capture a photograph | ✅ | ✅ |
-| Create a visit | ✅ | ✅ |
-| Sign a visitor out | ✅ | ✅ |
-| View today's visits | ✅ | ✅ |
-| View visit history | ✅ | ✅ |
-| Export visit history | ✅ | ✅ |
-| View the admin dashboard | ❌ | ✅ |
-| Create / edit users | ❌ | ✅ |
-| Enable / disable users | ❌ | ✅ |
-| Delete users | ❌ | ✅ |
-| Create / edit roles | ❌ | ✅ |
-| Manage locations | ❌ | ✅ |
-| Access admin reports | ❌ | ✅ |
+| Capability | Officer | Department | Admin |
+| --- | --- | --- | --- |
+| Sign in | ✅ | ✅ | ✅ |
+| Register a visitor | ✅ | ❌ | ✅ |
+| Search for a visitor | ✅ | ❌ | ✅ |
+| Capture a photograph | ✅ | ❌ | ✅ |
+| Create a visit | ✅ | ❌ | ✅ |
+| Sign a visitor out | ✅ | ❌ | ✅ |
+| View today's visits | ✅ | ❌ | ✅ |
+| View visit history | ✅ | ❌ | ✅ |
+| Export visit history | ✅ | ❌ | ✅ |
+| **Verify a visitor by camera** | ✅ | ✅ | ✅ |
+| View the admin dashboard | ❌ | ❌ | ✅ |
+| Create / edit users | ❌ | ❌ | ✅ |
+| Enable / disable users | ❌ | ❌ | ✅ |
+| Delete users | ❌ | ❌ | ✅ |
+| Create / edit roles | ❌ | ❌ | ✅ |
+| Manage locations | ❌ | ❌ | ✅ |
+| Access admin reports | ❌ | ❌ | ✅ |
 
 ### 10.1 Role principles
 
-- **Least privilege** — officers receive only what reception requires.
+- **Least privilege** — officers receive only what reception requires; department
+  staff receive only the verification screen and no access to visitor records.
 - **Configurable roles** — additional roles may be created and pointed at the
   appropriate module without code changes.
-- **Separation of duties** — administration is distinct from reception.
+- **Separation of duties** — administration, reception and department verification
+  are distinct.
+- **Data minimisation** — the department screen shows status and a name only, not
+  the full visitor record.
 - **Lockout protection** — an administrator cannot remove their own access.
 
 ---
@@ -664,23 +683,29 @@ apply:
 | AC-20 | Invalid filter values do not cause errors | ✅ |
 | AC-21 | Users, roles and locations can be managed by an administrator | ✅ |
 | AC-22 | Built-in roles and roles in use cannot be deleted | ✅ |
+| AC-23 | A department user is routed to the verification screen after login | ✅ |
+| AC-24 | A department user cannot reach visitor records or visit history | ✅ |
+| AC-25 | The verification screen reports "on site" for a signed-in visitor | ✅ |
+| AC-26 | The verification screen reports "not signed in" for a known visitor with no active visit | ✅ |
+| AC-27 | The verification screen reports "not verified" for an unknown person | ✅ |
+| AC-28 | The verification response contains no contact details, address or ID numbers | ✅ |
 
 ### 14.2 Non-functional acceptance
 
 | # | Criterion | Status |
 | --- | --- | --- |
-| AC-23 | All pages load in under 2 seconds on the local network | ✅ |
-| AC-24 | The interface is usable without technical knowledge | ✅ |
-| AC-25 | Passwords are stored hashed, never in plain text | ✅ |
-| AC-26 | The application works in Chrome, Edge and Firefox | ✅ |
-| AC-27 | CSRF protection is in place | ❌ Outstanding |
-| AC-28 | Automated tests exist and pass | ❌ Outstanding |
-| AC-29 | Backups and recovery are configured | ❌ Outstanding |
-| AC-30 | Retention policy is defined and enforced | ❌ Outstanding |
+| AC-29 | All pages load in under 2 seconds on the local network | ✅ |
+| AC-30 | The interface is usable without technical knowledge | ✅ |
+| AC-31 | Passwords are stored hashed, never in plain text | ✅ |
+| AC-32 | The application works in Chrome, Edge and Firefox | ✅ |
+| AC-33 | CSRF protection is in place | ❌ Outstanding |
+| AC-34 | Automated tests exist and pass | ❌ Outstanding |
+| AC-35 | Backups and recovery are configured | ❌ Outstanding |
+| AC-36 | Retention policy is defined and enforced | ❌ Outstanding |
 
 ### 14.3 Definition of done for production
 
-Production readiness requires AC-27 through AC-30 plus:
+Production readiness requires AC-33 through AC-36 plus:
 
 - TLS enabled
 - Default administrator credentials changed

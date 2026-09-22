@@ -1,0 +1,402 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .verify-shell {
+    max-width: 900px;
+    margin: 0 auto;
+  }
+
+  .verify-frame {
+    position: relative;
+    overflow: hidden;
+    border: 6px solid #adb5bd;
+    border-radius: 12px;
+    background: #111;
+    transition: border-color 0.2s ease-in-out, box-shadow 0.2s ease-in-out;
+  }
+
+  .verify-frame video {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+  }
+
+  .verify-frame.state-active {
+    border-color: #198754;
+    box-shadow: 0 0 0 6px rgba(25, 135, 84, 0.18);
+  }
+
+  .verify-frame.state-inactive {
+    border-color: #ffc107;
+    box-shadow: 0 0 0 6px rgba(255, 193, 7, 0.20);
+  }
+
+  .verify-frame.state-unknown {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 6px rgba(220, 53, 69, 0.18);
+  }
+
+  .verify-frame.state-multiple {
+    border-color: #ffc107;
+    box-shadow: 0 0 0 6px rgba(255, 193, 7, 0.20);
+  }
+
+  .verify-banner {
+    display: grid;
+    place-items: center;
+    min-height: 120px;
+    margin-top: 1rem;
+    border-radius: 12px;
+    padding: 1.25rem;
+    text-align: center;
+    background: #eef2f0;
+    color: #5e6f66;
+    transition: background-color 0.2s ease-in-out, color 0.2s ease-in-out;
+  }
+
+  .verify-banner .verify-label {
+    font-size: clamp(1.4rem, 4vw, 2.4rem);
+    font-weight: 800;
+    line-height: 1.1;
+    letter-spacing: 0.01em;
+  }
+
+  .verify-banner .verify-message {
+    margin-top: 0.35rem;
+    font-size: 1rem;
+  }
+
+  .verify-banner .verify-meta {
+    margin-top: 0.6rem;
+    font-size: 0.95rem;
+    opacity: 0.9;
+  }
+
+  .verify-banner.is-active {
+    background: #198754;
+    color: #fff;
+  }
+
+  .verify-banner.is-inactive {
+    background: #ffc107;
+    color: #3d2f00;
+  }
+
+  .verify-banner.is-unknown {
+    background: #dc3545;
+    color: #fff;
+  }
+
+  .verify-banner.is-scanning {
+    background: #0f6f3f;
+    color: #fff;
+  }
+
+  .verify-hint {
+    min-height: 26px;
+    font-weight: 600;
+  }
+
+  .verify-dot {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: verify-pulse 1.4s ease-in-out infinite;
+  }
+
+  @keyframes verify-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.25; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .verify-dot { animation: none; }
+  }
+</style>
+
+<div class="verify-shell">
+  <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+    <h3 class="mb-0">Visitor Verification</h3>
+    <span class="text-muted small" id="verifyStation">Department station</span>
+  </div>
+
+  <div class="card mb-3">
+    <div class="card-body">
+      <div class="verify-frame" id="verifyFrame">
+        <video id="video" autoplay muted playsinline></video>
+      </div>
+      <canvas id="canvas" width="480" height="600" style="display:none;"></canvas>
+
+      <div class="verify-banner" id="verifyBanner">
+        <div>
+          <div class="verify-label" id="verifyLabel">STARTING CAMERA</div>
+          <div class="verify-message" id="verifyMessage">Please wait…</div>
+          <div class="verify-meta" id="verifyMeta"></div>
+        </div>
+      </div>
+
+      <div class="d-flex flex-wrap align-items-center justify-content-between gap-2 mt-3">
+        <div class="verify-hint text-muted" id="verifyHint">Stand in front of the camera.</div>
+        <div class="d-flex gap-2">
+          <button class="btn btn-primary" type="button" id="verifyBtn" onclick="verifyNow()">
+            Verify Now
+          </button>
+          <button class="btn btn-outline-secondary" type="button" onclick="toggleAuto()" id="autoBtn">
+            Pause Auto-Check
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="alert alert-secondary small mb-0">
+    <b>Privacy:</b> this station shows verification status only. Visitor contact details,
+    addresses and visit history are not displayed here.
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
+<script>
+let videoStream = null;
+let faceDetector = null;
+let detectorMode = null;
+let lastFaceBox = null;
+let scanTimer = null;
+let autoEnabled = true;
+let verifying = false;
+let lastVerifyAt = 0;
+let lastResultKey = null;
+
+const AUTO_INTERVAL_MS = 2500;
+const COOLDOWN_MS = 3000;
+
+const FACE_API_MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const verifyFrame = document.getElementById('verifyFrame');
+const verifyBanner = document.getElementById('verifyBanner');
+const verifyLabel = document.getElementById('verifyLabel');
+const verifyMessage = document.getElementById('verifyMessage');
+const verifyMeta = document.getElementById('verifyMeta');
+const verifyHint = document.getElementById('verifyHint');
+const verifyBtn = document.getElementById('verifyBtn');
+const autoBtn = document.getElementById('autoBtn');
+
+function setBanner(state, label, message, meta) {
+  verifyFrame.classList.remove('state-active', 'state-inactive', 'state-unknown', 'state-multiple');
+  verifyBanner.classList.remove('is-active', 'is-inactive', 'is-unknown', 'is-scanning');
+
+  if (state === 'active') {
+    verifyFrame.classList.add('state-active');
+    verifyBanner.classList.add('is-active');
+  } else if (state === 'inactive') {
+    verifyFrame.classList.add('state-inactive');
+    verifyBanner.classList.add('is-inactive');
+  } else if (state === 'unknown') {
+    verifyFrame.classList.add('state-unknown');
+    verifyBanner.classList.add('is-unknown');
+  } else if (state === 'multiple') {
+    verifyFrame.classList.add('state-multiple');
+    verifyBanner.classList.add('is-inactive');
+  } else if (state === 'scanning') {
+    verifyBanner.classList.add('is-scanning');
+  }
+
+  verifyLabel.innerText = label;
+  verifyMessage.innerText = message || '';
+  verifyMeta.innerText = meta || '';
+}
+
+function setHint(text, kind) {
+  verifyHint.className = 'verify-hint ' + (kind || 'text-muted');
+  verifyHint.innerText = text;
+}
+
+function cropPortrait(faceBox) {
+  if (!video.videoWidth || !video.videoHeight) return null;
+
+  const w = 480;
+  const h = 600;
+  const ctx = canvas.getContext('2d');
+  canvas.width = w;
+  canvas.height = h;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, w, h);
+
+  let sx, sy, sw, sh;
+  if (faceBox) {
+    const cx = faceBox.x + faceBox.width / 2;
+    const cy = faceBox.y + faceBox.height / 2;
+    sw = Math.min(video.videoWidth, faceBox.width * 2.6);
+    sh = Math.min(video.videoHeight, faceBox.height * 3.4);
+    sx = Math.max(0, Math.min(video.videoWidth - sw, cx - sw / 2));
+    sy = Math.max(0, Math.min(video.videoHeight - sh, cy - faceBox.height * 1.25));
+  } else {
+    sw = Math.min(video.videoWidth, video.videoHeight * 0.8);
+    sh = Math.min(video.videoHeight, sw * 1.25);
+    sx = Math.max(0, (video.videoWidth - sw) / 2);
+    sy = Math.max(0, (video.videoHeight - sh) / 2);
+  }
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', 0.92);
+}
+
+function verifyNow() {
+  if (verifying) return;
+  const dataURL = cropPortrait(lastFaceBox);
+  if (!dataURL) {
+    setBanner('unknown', 'CAMERA NOT READY', 'The camera has not started yet.');
+    return;
+  }
+  runVerification(dataURL);
+}
+
+function runVerification(dataURL) {
+  verifying = true;
+  verifyBtn.disabled = true;
+  setBanner('scanning', 'CHECKING…', 'Comparing against visitor records.');
+
+  const fd = new FormData();
+  fd.append('photo_data', dataURL);
+
+  fetch('/api/verify/face', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(function (d) {
+      if (!d.ok) {
+        setBanner('unknown', 'CHECK FAILED', d.error || 'Unable to verify.');
+        return;
+      }
+
+      const key = d.status + '|' + (d.visitor_name || '') + '|' + (d.visit_no || '');
+      const meta = [];
+      if (d.visitor_name) meta.push(d.visitor_name);
+      if (d.visit_no) meta.push('Visit ' + d.visit_no);
+      if (d.signed_in_at) meta.push('Signed in ' + d.signed_in_at);
+
+      setBanner(d.status, d.label, d.message, meta.join('  ·  '));
+      lastResultKey = key;
+      lastVerifyAt = Date.now();
+    })
+    .catch(function () {
+      setBanner('unknown', 'CHECK FAILED', 'Network error. Try again.');
+    })
+    .finally(function () {
+      verifying = false;
+      verifyBtn.disabled = false;
+    });
+}
+
+function normalizeNativeFace(face) {
+  return face.boundingBox;
+}
+
+function normalizeFaceApiDetection(detection) {
+  const box = detection.box;
+  return { x: box.x, y: box.y, width: box.width, height: box.height };
+}
+
+async function detectFaces() {
+  if (detectorMode === 'native' && faceDetector) {
+    const faces = await faceDetector.detect(video);
+    return faces.map(normalizeNativeFace);
+  }
+  if (detectorMode === 'face-api' && window.faceapi) {
+    const options = new faceapi.TinyFaceDetectorOptions({ inputSize: 416, scoreThreshold: 0.45 });
+    const detections = await faceapi.detectAllFaces(video, options);
+    return detections.map(normalizeFaceApiDetection);
+  }
+  return [];
+}
+
+async function scanForFaces() {
+  if (!detectorMode || verifying || !video.videoWidth) return;
+
+  try {
+    const faces = await detectFaces();
+
+    if (!faces.length) {
+      lastFaceBox = null;
+      setHint('No face detected. Stand in front of the camera.', 'text-muted');
+      return;
+    }
+
+    if (faces.length > 1) {
+      lastFaceBox = null;
+      setBanner('multiple', 'MULTIPLE FACES', 'Only one person should be in frame.');
+      setHint('Ask others to step aside.', 'text-warning');
+      return;
+    }
+
+    lastFaceBox = faces[0];
+    setHint('Face detected. Verifying automatically…', 'text-success');
+
+    if (autoEnabled && !verifying && Date.now() - lastVerifyAt > COOLDOWN_MS) {
+      const dataURL = cropPortrait(lastFaceBox);
+      if (dataURL) runVerification(dataURL);
+    }
+  } catch (err) {
+    setHint('Face detection unavailable. Use Verify Now.', 'text-muted');
+  }
+}
+
+async function loadFaceApiDetector() {
+  if (!window.faceapi) return false;
+  try {
+    await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_API_MODEL_URL);
+    detectorMode = 'face-api';
+    return true;
+  } catch (err) {
+    return false;
+  }
+}
+
+async function startFaceScan() {
+  if ('FaceDetector' in window) {
+    faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 2 });
+    detectorMode = 'native';
+  } else {
+    const loaded = await loadFaceApiDetector();
+    if (!loaded) {
+      setHint('Face detection unavailable. Use Verify Now.', 'text-muted');
+      return;
+    }
+  }
+  scanTimer = window.setInterval(scanForFaces, AUTO_INTERVAL_MS);
+}
+
+function toggleAuto() {
+  autoEnabled = !autoEnabled;
+  autoBtn.innerText = autoEnabled ? 'Pause Auto-Check' : 'Resume Auto-Check';
+  autoBtn.className = autoEnabled ? 'btn btn-outline-secondary' : 'btn btn-success';
+  setHint(autoEnabled ? 'Automatic verification is on.' : 'Automatic verification paused.', 'text-muted');
+}
+
+if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 960, height: 720 } })
+    .then(function (stream) {
+      videoStream = stream;
+      video.srcObject = stream;
+      video.onloadedmetadata = function () {
+        video.play();
+        setBanner('scanning', 'READY', 'Stand in front of the camera.');
+        startFaceScan();
+      };
+    })
+    .catch(function () {
+      setBanner('unknown', 'CAMERA BLOCKED', 'Camera permission is required for verification.');
+    });
+} else {
+  setBanner('unknown', 'NO CAMERA', 'This browser does not support camera access.');
+}
+</script>
+{% endblock %}

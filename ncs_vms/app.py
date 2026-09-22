@@ -76,10 +76,12 @@ class User(db.Model):
 
 ROLE_ADMIN = 'Admin'
 ROLE_OFFICER = 'Officer'
+ROLE_DEPARTMENT = 'Department'
 
 DEFAULT_ROLES = [
     (ROLE_ADMIN, 'Full system administration and reporting', 'admin_dashboard'),
     (ROLE_OFFICER, 'Reception desk check-in and visitor handling', 'checkin'),
+    (ROLE_DEPARTMENT, 'Camera-only visitor verification at a department', 'verify'),
 ]
 
 class Officer(db.Model):
@@ -269,10 +271,32 @@ def current_role():
 def is_admin():
     return current_role() == ROLE_ADMIN
 
+def is_department():
+    return current_role() == ROLE_DEPARTMENT
+
 def require_officer_session():
     """Any authenticated user may reach the reception module."""
     if not session.get('user_id'):
         return redirect(url_for('index'))
+    return None
+
+def require_reception_session():
+    """Reception pages are for officers and admins, not department stations.
+
+    Department accounts are deliberately limited to the camera verification
+    screen so they cannot browse visitor records.
+    """
+    if not session.get('user_id'):
+        return redirect(url_for('index'))
+    if is_department():
+        return redirect(url_for('verify'))
+    return None
+
+def require_api_reception_session():
+    if not session.get('user_id'):
+        return jsonify({'ok': False, 'error': 'login_required'}), 401
+    if is_department():
+        return jsonify({'ok': False, 'error': 'forbidden'}), 403
     return None
 
 def require_admin_session():
@@ -326,23 +350,56 @@ def make_professional_portrait(img):
     portrait.paste(img, (x, y))
     return portrait
 
-def image_fingerprint(img):
-    gray = ImageOps.grayscale(img.resize((9, 8), Image.Resampling.LANCZOS))
+def crop_to_content(img, threshold=245):
+    """Trim the uniform white canvas so hashing sees the face, not the border.
+
+    Portraits are pasted onto a white 480x600 canvas, which means roughly a third
+    of the image carries no facial information. Hashing the full canvas lets the
+    background dominate the result and destroys discrimination between people.
+    """
+    gray = img.convert('L')
+    mask = gray.point(lambda v: 255 if v < threshold else 0)
+    bbox = mask.getbbox()
+    if not bbox:
+        return img
+    # Guard against a degenerate crop.
+    if (bbox[2] - bbox[0]) < 16 or (bbox[3] - bbox[1]) < 16:
+        return img
+    return img.crop(bbox)
+
+
+def normalize_for_hash(img):
+    """Normalise brightness and contrast so hashing tolerates lighting changes.
+
+    Without this, a uniformly brighter or darker frame produces a completely
+    different hash for the same person.
+    """
+    gray = ImageOps.grayscale(img)
+    return ImageOps.autocontrast(gray, cutoff=1)
+
+
+def image_fingerprint(img, size=16):
+    """Difference hash: compare horizontally adjacent pixels on a grey image."""
+    gray = normalize_for_hash(img).resize((size + 1, size), Image.Resampling.LANCZOS)
     pixels = list(gray.getdata())
     bits = []
-    for row in range(8):
-        start = row * 9
-        for col in range(8):
+    for row in range(size):
+        start = row * (size + 1)
+        for col in range(size):
             bits.append(1 if pixels[start + col] > pixels[start + col + 1] else 0)
     return bits
 
-def average_fingerprint(img):
-    gray = ImageOps.grayscale(img.resize((8, 8), Image.Resampling.LANCZOS))
+
+def average_fingerprint(img, size=16):
+    """Average hash: threshold each pixel against the mean of the image."""
+    gray = normalize_for_hash(img).resize((size, size), Image.Resampling.LANCZOS)
     pixels = list(gray.getdata())
     avg = sum(pixels) / len(pixels)
     return [pixel >= avg for pixel in pixels]
 
+
 def center_fingerprint(img):
+    """Average hash of a centred square crop, for framing tolerance."""
     width, height = img.size
     side = min(width, height)
     left = (width - side) // 2
@@ -350,8 +407,11 @@ def center_fingerprint(img):
     crop = img.crop((left, top, left + side, top + side))
     return average_fingerprint(crop)
 
+
 def fingerprint_distance(left, right):
     return sum(1 for a, b in zip(left, right) if a != b)
+
+FINGERPRINT_VERSION = 'v2'
 
 def encode_fingerprint(bits):
     return ''.join('1' if bit else '0' for bit in bits)
@@ -359,6 +419,8 @@ def encode_fingerprint(bits):
 def decode_fingerprint(value):
     if not value:
         return None
+    if value.startswith(FINGERPRINT_VERSION + ':'):
+        value = value[len(FINGERPRINT_VERSION) + 1:]
     if '|' in value:
         return [
             [char == '1' for char in part]
@@ -368,17 +430,39 @@ def decode_fingerprint(value):
     return [char == '1' for char in value]
 
 def portrait_fingerprints(img):
+    """Fingerprints computed from the cropped face region, not the white canvas.
+
+    The portrait is normalised onto a white canvas first, so the content crop
+    reliably removes the empty border before hashing.
+    """
     portrait = make_professional_portrait(img)
+    content = crop_to_content(portrait)
     return [
-        image_fingerprint(portrait),
-        average_fingerprint(portrait),
-        center_fingerprint(portrait)
+        image_fingerprint(content),
+        average_fingerprint(content),
+        center_fingerprint(content)
     ]
 
 def encode_fingerprints(fingerprints):
-    return '|'.join(encode_fingerprint(bits) for bits in fingerprints)
+    body = '|'.join(encode_fingerprint(bits) for bits in fingerprints)
+    return f"{FINGERPRINT_VERSION}:{body}"
 
 def fingerprint_match_distance(probe_fingerprints, stored_value):
+    """Total Hamming distance between probe and stored fingerprints.
+
+    Distances are **summed** across the fingerprint components, not minimised.
+    Taking the minimum would mean a match only needs one component to be close,
+    which collapses discrimination: three components each scoring ~25 would
+    report 25 instead of ~75 and match almost anyone.
+
+    Returns None when the stored value is missing or was produced by an older
+    fingerprint format, so callers can rebuild it rather than silently failing.
+    """
+    if not stored_value:
+        return None
+    if not stored_value.startswith(FINGERPRINT_VERSION + ':'):
+        return None
+
     stored = decode_fingerprint(stored_value)
     if not stored:
         return None
@@ -386,12 +470,48 @@ def fingerprint_match_distance(probe_fingerprints, stored_value):
     if stored and isinstance(stored[0], bool):
         stored = [stored]
 
+    # Preferred path: components correspond one-to-one, so sum them.
+    if len(probe_fingerprints) == len(stored):
+        total = 0
+        for probe, candidate in zip(probe_fingerprints, stored):
+            if len(probe) != len(candidate):
+                break
+            total += fingerprint_distance(probe, candidate)
+        else:
+            return total
+
+    # Fallback for mismatched shapes: best single-component distance.
     distances = []
     for probe in probe_fingerprints:
         for candidate in stored:
             if len(probe) == len(candidate):
                 distances.append(fingerprint_distance(probe, candidate))
     return min(distances) if distances else None
+
+# Maximum total Hamming distance (of 768 bits) still treated as the same person.
+#
+# Measured on synthetic test faces with the v2 fingerprints:
+#   identical image ................ 0
+#   same person, mild lighting ..... up to ~10
+#   different people ............... 38 or more (average ~75)
+#
+# 60 sits in the gap. It is deliberately conservative: a false "verified" is far
+# more damaging than asking someone to try again.
+#
+# IMPORTANT: this is perceptual image hashing, not biometric face recognition.
+# It compares overall image structure and is sensitive to pose, expression and
+# strong lighting changes. Treat a match as a convenience signal, never as proof
+# of identity. See docs/TECHNICAL_DOCUMENTATION.md section 13.
+FINGERPRINT_MATCH_THRESHOLD = 60
+
+# Total bits in a v2 fingerprint set (16x16 dhash + 16x16 ahash + 16x16 centre).
+FINGERPRINT_BITS = 16 * 16 * 3
+
+def match_score(distance):
+    """Convert a Hamming distance into a 0..1 confidence score."""
+    if distance is None:
+        return 0
+    return max(0, round((FINGERPRINT_BITS - distance) / FINGERPRINT_BITS, 2))
 
 def save_visitor_photo(photo_data):
     img = decode_data_image(photo_data)
@@ -404,11 +524,10 @@ def save_visitor_photo(photo_data):
     filename = f"visitor_{uuid.uuid4().hex}.jpg"
     full_path = os.path.join(photos_dir, filename)
     portrait.save(full_path, format='JPEG', quality=88, optimize=True)
-    return full_path, encode_fingerprints([
-        image_fingerprint(portrait),
-        average_fingerprint(portrait),
-        center_fingerprint(portrait)
-    ])
+    # Use portrait_fingerprints so the stored value matches the probe path
+    # (content-cropped and normalised). Hashing the raw portrait here would
+    # produce a fingerprint that never matches a probe.
+    return full_path, encode_fingerprints(portrait_fingerprints(img))
 
 def portrait_data_url(photo_data):
     img = decode_data_image(photo_data)
@@ -486,10 +605,117 @@ def clean_form_value(data, key):
 
 @app.route('/checkin')
 def checkin():
-    gate = require_officer_session()
+    gate = require_reception_session()
     if gate:
         return gate
     return render_template('checkin.html')
+
+@app.route('/verify')
+def verify():
+    """Camera-only visitor verification for department staff.
+
+    Deliberately minimal: the operator sees a live camera and a status result,
+    never visitor records or personal details.
+    """
+    gate = require_officer_session()
+    if gate:
+        return gate
+    return render_template('verify.html')
+
+def verification_result(visitor, active_visit, distance):
+    """Build the privacy-limited payload returned to the verification screen."""
+    if not visitor:
+        return {
+            'status': 'unknown',
+            'label': 'NOT VERIFIED',
+            'message': 'No matching visitor record found.',
+            'visitor_name': None,
+            'visit_no': None,
+            'signed_in_at': None,
+            'match_score': 0
+        }
+
+    if active_visit:
+        return {
+            'status': 'active',
+            'label': 'VERIFIED — ON SITE',
+            'message': 'Visitor is verified and currently signed in.',
+            'visitor_name': visitor.fullname,
+            'visit_no': active_visit.visit_no,
+            'signed_in_at': active_visit.signin_time.strftime('%H:%M') if active_visit.signin_time else None,
+            'match_score': match_score(distance)
+        }
+
+    return {
+        'status': 'inactive',
+        'label': 'VERIFIED — NOT SIGNED IN',
+        'message': 'Visitor is known but has no active visit today.',
+        'visitor_name': visitor.fullname,
+        'visit_no': None,
+        'signed_in_at': None,
+        'match_score': match_score(distance)
+    }
+
+@app.route('/api/verify/face', methods=['POST'])
+def api_verify_face():
+    """Match a camera frame and report the visitor's sign-in status only.
+
+    Returns no contact details, address, ID numbers or visit history — the
+    department operator only needs to know whether the person may proceed.
+    """
+    gate = require_api_officer_session()
+    if gate:
+        return gate
+
+    photo_data = request.form.get('photo_data')
+    img = decode_data_image(photo_data)
+    if not img:
+        return jsonify({'ok': False, 'error': 'invalid_photo'}), 400
+
+    probe = portrait_fingerprints(img)
+    best = None
+    best_distance = None
+
+    visitors = Visitor.query.filter(Visitor.photo_path.isnot(None)).all()
+    for visitor in visitors:
+        try:
+            distance = fingerprint_match_distance(probe, visitor.face_fingerprint)
+            if distance is None and visitor.photo_path and os.path.exists(visitor.photo_path):
+                stored_img = Image.open(visitor.photo_path).convert('RGB')
+                visitor.face_fingerprint = encode_fingerprints(portrait_fingerprints(stored_img))
+                distance = fingerprint_match_distance(probe, visitor.face_fingerprint)
+            if distance is None:
+                continue
+        except Exception as e:
+            print("Verify compare error:", e)
+            continue
+
+        if best_distance is None or distance < best_distance:
+            best = visitor
+            best_distance = distance
+
+    if best and best_distance is not None and best_distance <= FINGERPRINT_MATCH_THRESHOLD:
+        db.session.commit()
+        active = active_visit_for_visitor(best.id, date.today())
+        result = verification_result(best, active, best_distance)
+        result['ok'] = True
+        return jsonify(result)
+
+    result = verification_result(None, None, None)
+    result['ok'] = True
+    return jsonify(result)
+
+@app.route('/api/verify/status')
+def api_verify_status():
+    """Lightweight health check for the verification station."""
+    gate = require_api_officer_session()
+    if gate:
+        return gate
+    return jsonify({
+        'ok': True,
+        'visitors_with_photos': Visitor.query.filter(Visitor.photo_path.isnot(None)).count(),
+        'active_visits': Visit.query.filter(Visit.status == 'in').count()
+    })
 
 @app.route('/admin')
 def admin():
@@ -968,7 +1194,7 @@ def api_admin_stats():
 
 @app.route('/visits/today')
 def visits_today():
-    gate = require_officer_session()
+    gate = require_reception_session()
     if gate:
         return gate
     today = date.today()
@@ -993,7 +1219,7 @@ def visits_today():
 
 @app.route('/api/visits')
 def list_visits():
-    gate = require_api_officer_session()
+    gate = require_api_reception_session()
     if gate:
         return gate
 
@@ -1066,7 +1292,7 @@ def build_history_query(args):
 
 @app.route('/visits/history')
 def visits_history():
-    gate = require_officer_session()
+    gate = require_reception_session()
     if gate:
         return gate
 
@@ -1125,7 +1351,7 @@ def visits_history():
 
 @app.route('/api/visits/history')
 def api_visits_history():
-    gate = require_api_officer_session()
+    gate = require_api_reception_session()
     if gate:
         return gate
 
@@ -1140,7 +1366,7 @@ def api_visits_history():
 
 @app.route('/api/visitor/search')
 def search_visitor():
-    gate = require_api_officer_session()
+    gate = require_api_reception_session()
     if gate:
         return gate
     q = request.args.get('q', '')
@@ -1157,7 +1383,7 @@ def search_visitor():
 
 @app.route('/api/visitors')
 def list_visitors():
-    gate = require_api_officer_session()
+    gate = require_api_reception_session()
     if gate:
         return gate
 
@@ -1178,7 +1404,7 @@ def list_visitors():
 
 @app.route('/api/visitor/<int:visitor_id>')
 def get_visitor(visitor_id):
-    gate = require_api_officer_session()
+    gate = require_api_reception_session()
     if gate:
         return gate
 
@@ -1194,7 +1420,7 @@ def get_visitor(visitor_id):
 
 @app.route('/api/visitor/<int:visitor_id>/update', methods=['POST'])
 def update_visitor(visitor_id):
-    gate = require_api_officer_session()
+    gate = require_api_reception_session()
     if gate:
         return gate
 
@@ -1255,7 +1481,7 @@ def update_visitor(visitor_id):
 
 @app.route('/api/visitor/<int:visitor_id>/photo')
 def visitor_photo(visitor_id):
-    gate = require_officer_session()
+    gate = require_reception_session()
     if gate:
         return gate
 
@@ -1267,7 +1493,7 @@ def visitor_photo(visitor_id):
 
 @app.route('/api/visitors/rebuild-face-index', methods=['POST'])
 def rebuild_face_index():
-    gate = require_api_officer_session()
+    gate = require_api_reception_session()
     if gate:
         return gate
 
@@ -1291,7 +1517,7 @@ def rebuild_face_index():
 
 @app.route('/api/visitor/face-search', methods=['POST'])
 def face_search_visitor():
-    gate = require_api_officer_session()
+    gate = require_api_reception_session()
     if gate:
         return gate
 
@@ -1303,7 +1529,7 @@ def face_search_visitor():
 
     probe = portrait_fingerprints(img)
     best = None
-    best_distance = 65
+    best_distance = None
 
     visitors = Visitor.query.filter(Visitor.photo_path.isnot(None)).all()
     for visitor in visitors:
@@ -1321,16 +1547,16 @@ def face_search_visitor():
             print("Photo compare error:", e)
             continue
 
-        if distance < best_distance:
+        if best_distance is None or distance < best_distance:
             best = visitor
             best_distance = distance
 
-    if best and best_distance <= 30:
+    if best and best_distance is not None and best_distance <= FINGERPRINT_MATCH_THRESHOLD:
         db.session.commit()
         return jsonify({
             'ok': True,
             'found': True,
-            'match_score': max(0, round((64 - best_distance) / 64, 2)),
+            'match_score': match_score(best_distance),
             'portrait': portrait_url,
             'visitor': visitor_to_dict(best),
             'history': visitor_history(best.id)
@@ -1339,13 +1565,13 @@ def face_search_visitor():
     return jsonify({
         'ok': True,
         'found': False,
-        'match_score': max(0, round((64 - best_distance) / 64, 2)) if best else 0,
+        'match_score': match_score(best_distance),
         'portrait': portrait_url
     })
 
 @app.route('/api/visitor/create', methods=['POST'])
 def create_visitor():
-    gate = require_api_officer_session()
+    gate = require_api_reception_session()
     if gate:
         return gate
     try:
@@ -1417,7 +1643,7 @@ def create_visitor():
 
 @app.route('/api/visit/create', methods=['POST'])
 def create_visit():
-    gate = require_api_officer_session()
+    gate = require_api_reception_session()
     if gate:
         return gate
     data = request.form
@@ -1485,7 +1711,7 @@ def create_visit():
 
 @app.route('/api/visit/signout', methods=['POST'])
 def signout_visit():
-    gate = require_api_officer_session()
+    gate = require_api_reception_session()
     if gate:
         return gate
     visit_no = request.form['visit_no']
