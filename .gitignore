@@ -12,6 +12,9 @@ env/
 instance/*.db
 instance/**/*.db
 instance/photos/
+ncs_vms/instance/
+ncs_vms/static/img/visit_*.png
+ncs_vms/static/img/photos/
 *.sqlite
 *.sqlite3
 
