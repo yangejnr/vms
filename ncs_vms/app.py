@@ -19,6 +19,14 @@ except ImportError:
     pass
 
 app = Flask(__name__)
+
+# Flask resolves the instance folder from the application root. When this file is
+# run directly ("python ncs_vms/app.py") the root becomes the working directory,
+# so the database location would depend on where the app was launched from. Pin
+# the instance path to the package directory so it is always the same file.
+app.instance_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'instance')
+os.makedirs(app.instance_path, exist_ok=True)
+
 app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'dev-secret-change-me')
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///ncs_vms.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
