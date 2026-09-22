@@ -5,3 +5,6 @@ Pillow
 python-dotenv
 pyngrok
 qrcode
+
+# Documentation tooling (tools/md_to_docx.py)
+python-docx

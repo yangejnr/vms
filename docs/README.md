@@ -33,6 +33,38 @@ particularly sections 7 (Functional Requirements) and 14 (Acceptance Criteria).
 
 ---
 
+## Word (.docx) versions
+
+Ready-to-share Word documents are provided alongside the Markdown sources:
+
+| Word document | Source |
+| --- | --- |
+| `USER_GUIDE.docx` | `USER_GUIDE.md` |
+| `MANAGEMENT_PRESENTATION.docx` | `MANAGEMENT_PRESENTATION.md` |
+| `TECHNICAL_DOCUMENTATION.docx` | `TECHNICAL_DOCUMENTATION.md` |
+| `BUSINESS_REQUIREMENTS.docx` | `BUSINESS_REQUIREMENTS.md` |
+| `README.docx` | `README.md` |
+
+These are generated, fully formatted Word files with styled headings, colour-coded
+tables, embedded screenshots, a running header, and page numbers in the footer.
+
+### Regenerating the Word documents
+
+After editing any Markdown source, regenerate the Word files:
+
+```bash
+./.venv/bin/python tools/md_to_docx.py               # all documents
+./.venv/bin/python tools/md_to_docx.py docs/USER_GUIDE.md   # just one
+```
+
+The converter requires `python-docx` (`pip install python-docx`).
+
+> **Updating the table of contents:** Word does not build TOC fields
+> automatically. Open the document, right-click the table of contents line and
+> choose **Update Field → Update entire table**.
+
+---
+
 ## Rendering the Documents
 
 All documents are written in **Markdown**, so they display on GitHub and in VS Code

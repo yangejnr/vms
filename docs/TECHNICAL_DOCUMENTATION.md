@@ -399,6 +399,25 @@ Admins cannot lock themselves out. These are enforced server-side:
 A disabled user (`active = False`) is rejected at login with HTTP 403 and a
 message. Existing sessions are **not** invalidated — see the limitations section.
 
+### Sessions outlive the account
+
+Session state is written once at login and is **not revalidated on each request**.
+The guards read `session['user_id']` and `session['role']`; they do not re-query the
+database. Consequences:
+
+- Disabling a user does **not** end their active session; they keep their previous
+  access until the cookie expires.
+- **Deleting** a user leaves any existing session fully functional. The session
+  still carries the old `user_id`, service number and role, so the holder can still
+  reach pages for that role until they log out.
+
+This was observed in practice: after deleting a test officer account, a browser
+retained access to `/checkin` as an "Officer".
+
+**To check a session's age**, note that Flask's default session cookie is not
+permanent, so it lasts for the browser session. Add explicit expiry and per-request
+user lookup to close this gap — see the limitations section.
+
 ---
 
 ## 9. The Instance Path — Important
@@ -441,6 +460,45 @@ ncs_vms/instance/ncs_vms.db
 
 > **The top-level `instance/` directory is legacy.** It may contain stale data from
 > before the fix. It is not read by the application.
+
+### 9.1 A second way to get the wrong database: stale processes
+
+Even after the fix, two databases can reappear if you leave an old server running.
+The Flask development reloader runs a parent **and** a child process, and Werkzeug
+binds the listening socket with `SO_REUSEPORT`. This means **two separate processes
+can share a single port**, and a request may be served by either one.
+
+A server started *before* a code change keeps serving **the code it loaded at
+startup**, and holds whichever database file it opened at that time. The symptom is
+a login that works on one machine and fails on another, or data that changes
+between refreshes.
+
+**Diagnose it:**
+
+```bash
+# Any duplicated processes bound to one port?
+ss -ltnp | grep python
+
+# Which database does a given process actually hold open?
+ls -l /proc/<pid>/fd | grep '\.db'
+
+# How old is the process versus the code?
+ps -o pid=,lstart= -p <pid>
+stat -c '%y' ncs_vms/app.py
+```
+
+If a process started before `app.py` was last modified, it is running stale code.
+
+**Fix it — always restart cleanly rather than starting a second copy:**
+
+```bash
+pkill -f "ncs_vms/app.py"
+sleep 1
+PORT=5100 ./.venv/bin/python ncs_vms/app.py
+```
+
+> **Rule of thumb:** after editing `app.py`, kill the old process first. Do not
+> assume a second `python ncs_vms/app.py` replaces the first.
 
 ---
 
@@ -786,18 +844,21 @@ Ordered roughly by impact.
 5. **The `Officer` model is dead code** — remove it.
 6. **Legacy top-level `instance/` directory** still exists and may confuse
    newcomers. Consider deleting it.
-7. **Photo files are never garbage-collected.**
-8. **Face matching is weak** (perceptual hashing, not biometric).
-9. **`Visitor.email` has no unique constraint** at the database level; duplicates
-   are only prevented in application code, and only case-insensitively.
-10. **History and reports cap at 500 rows** with no pagination. Fine for a
+7. **Sessions are not revalidated.** Deleting or disabling a user does not end
+   their session. Look up the user on each request and reject if missing/inactive.
+8. **Restarting with a stale process yields two databases.** See §9.1.
+9. **Photo files are never garbage-collected.**
+10. **Face matching is weak** (perceptual hashing, not biometric).
+11. **`Visitor.email` has no unique constraint** at the database level; duplicates
+    are only prevented in application code, and only case-insensitively.
+12. **History and reports cap at 500 rows** with no pagination. Fine for a
     prototype; not for scale.
-11. **No foreign key from visits to users** — audit fields are free-text service
+13. **No foreign key from visits to users** — audit fields are free-text service
     numbers.
-12. **`Visitor` and `Visit` have no delete endpoints**, so cleanup requires direct
+14. **`Visitor` and `Visit` have no delete endpoints**, so cleanup requires direct
     database access.
-13. **CORS is enabled globally** (`CORS(app)`) with default permissive settings.
-14. **SQLite** is unsuitable for concurrent multi-desk use; move to PostgreSQL.
+15. **CORS is enabled globally** (`CORS(app)`) with default permissive settings.
+16. **SQLite** is unsuitable for concurrent multi-desk use; move to PostgreSQL.
 
 ---
 
