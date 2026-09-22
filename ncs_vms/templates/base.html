@@ -55,8 +55,18 @@
       </span>
     </a>
     <div class="d-flex align-items-center gap-2">
+      {% if session.get('role') == 'Admin' %}
+      <a href="{{ url_for('admin_dashboard') }}" class="btn btn-sm btn-light">Dashboard</a>
+      <a href="{{ url_for('admin_users') }}" class="btn btn-sm btn-outline-light">Users</a>
+      <a href="{{ url_for('admin_roles') }}" class="btn btn-sm btn-outline-light">Roles</a>
+      <a href="{{ url_for('admin_locations') }}" class="btn btn-sm btn-outline-light">Locations</a>
+      <a href="{{ url_for('admin_reports') }}" class="btn btn-sm btn-outline-light">Reports</a>
+      <a href="{{ url_for('checkin') }}" class="btn btn-sm btn-outline-light">Reception</a>
+      {% else %}
       <a href="{{ url_for('checkin') }}" class="btn btn-sm btn-light">Check-In</a>
       <a href="{{ url_for('visits_today') }}" class="btn btn-sm btn-outline-light">Today’s Visits</a>
+      <a href="{{ url_for('visits_history') }}" class="btn btn-sm btn-outline-light">History</a>
+      {% endif %}
       <a href="{{ url_for('logout') }}" class="btn btn-sm btn-warning">Logout</a>
     </div>
   </div>
