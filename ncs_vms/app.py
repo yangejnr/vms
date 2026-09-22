@@ -86,6 +86,14 @@ DEFAULT_ROLES = [
     (ROLE_DEPARTMENT, 'Camera-only visitor verification at a department', 'verify'),
 ]
 
+# Recognised NCS ranks, in seniority order. Stored as free text so existing
+# records remain readable, but new and edited users are limited to this list.
+NCS_RANKS = [
+    'AC', 'CSC', 'DSC', 'SC',
+    'CA III', 'CA II', 'CA I',
+    'AIC', 'IC', 'ASC II', 'ASC I',
+]
+
 class Officer(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(100))
@@ -786,6 +794,7 @@ def admin_users():
     return render_template(
         'admin_users.html',
         users=rows,
+        ranks=NCS_RANKS,
         roles=[{'id': r.id, 'name': r.name, 'description': r.description or ''} for r in roles],
         locations=[{'id': l.id, 'name': l.name, 'type': l.type or ''} for l in locations]
     )
@@ -915,6 +924,14 @@ def api_create_user():
             'message': 'Phone number must contain exactly 11 digits.'
         }), 400
 
+    rank = clean_form_value(data, 'rank')
+    if rank and rank not in NCS_RANKS:
+        return jsonify({
+            'ok': False,
+            'error': 'invalid_rank',
+            'message': 'Select a rank from the list.'
+        }), 400
+
     user = User(
         service_no=service_no,
         fullname=fullname,
@@ -959,6 +976,16 @@ def api_update_user(user_id):
             'ok': False,
             'error': 'invalid_phone',
             'message': 'Phone number must contain exactly 11 digits.'
+        }), 400
+
+    rank = clean_form_value(data, 'rank')
+    # Accept a rank from the standard list, or the user's existing value so an
+    # edit does not force a change to a legacy rank.
+    if rank and rank not in NCS_RANKS and rank != user.rank:
+        return jsonify({
+            'ok': False,
+            'error': 'invalid_rank',
+            'message': 'Select a rank from the list.'
         }), 400
 
     # Never let an admin lock themselves out of the admin module.

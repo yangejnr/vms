@@ -94,6 +94,8 @@ Admin-only endpoints live under `/api/admin/` and return `403` for non-admin use
 - Visitor names are stored uppercase, with collapsed whitespace
 - Phone numbers accept digits only and must be exactly 11 digits
 - Passwords must be at least 6 characters
+- User rank must be one of the standard NCS ranks, or the user's existing value
+  on edit so legacy ranks are not silently wiped
 - A visitor cannot hold two active visits on the same day
 
 ## Architecture

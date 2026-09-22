@@ -329,7 +329,8 @@ never referenced. It can safely be removed.
 | `Visit.purpose` | `official`, `personal` |
 | `Visit.status` | `in`, `out` |
 | `User.location_type` | `HQ`, `Command` |
-| `Role.name` (built-in) | `Admin`, `Officer` |
+| `User.rank` | `NCS_RANKS` in `app.py`: `AC`, `CSC`, `DSC`, `SC`, `CA III`, `CA II`, `CA I`, `AIC`, `IC`, `ASC II`, `ASC I` |
+| `Role.name` (built-in) | `Admin`, `Officer`, `Department` |
 
 SQLite does not enforce these — they are validated in application code.
 

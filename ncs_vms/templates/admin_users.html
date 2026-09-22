@@ -80,7 +80,12 @@
             </div>
             <div class="col-md-3">
               <label class="form-label">Rank</label>
-              <input class="form-control" name="rank">
+              <select class="form-select" name="rank" id="userRank">
+                <option value="">Select rank</option>
+                {% for rank in ranks %}
+                <option value="{{ rank }}">{{ rank }}</option>
+                {% endfor %}
+              </select>
             </div>
             <div class="col-md-4">
               <label class="form-label">Role</label>
@@ -162,6 +167,30 @@ function openCreateUser() {
   userModal.show();
 }
 
+function setRankValue(rank) {
+  const select = document.getElementById('userRank');
+  // Drop any legacy option added by a previous edit.
+  const legacy = select.querySelector('option[data-legacy="1"]');
+  if (legacy) legacy.remove();
+
+  if (!rank) {
+    select.value = '';
+    return;
+  }
+
+  // Preserve a stored rank that is no longer in the standard list, so editing
+  // a user does not silently wipe it.
+  const exists = Array.from(select.options).some(function (o) { return o.value === rank; });
+  if (!exists) {
+    const opt = document.createElement('option');
+    opt.value = rank;
+    opt.textContent = rank + ' (existing)';
+    opt.setAttribute('data-legacy', '1');
+    select.appendChild(opt);
+  }
+  select.value = rank;
+}
+
 function openEditUser(button) {
   const u = JSON.parse(button.dataset.user);
   userForm.reset();
@@ -170,7 +199,7 @@ function openEditUser(button) {
   document.getElementById('userServiceNo').value = u.service_no;
   document.getElementById('userServiceNo').readOnly = true;
   userForm.querySelector('[name=fullname]').value = u.fullname;
-  userForm.querySelector('[name=rank]').value = u.rank;
+  setRankValue(u.rank);
   userForm.querySelector('[name=email]').value = u.email;
   userForm.querySelector('[name=phone]').value = u.phone;
   document.getElementById('userRole').value = u.role_id;

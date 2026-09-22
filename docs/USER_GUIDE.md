@@ -331,9 +331,17 @@ Manage everyone who can sign in.
 **To add a user:**
 
 1. Click **Add User**.
-2. Complete the form, including **Service No**, **Full Name**, **Role** and
-   **Password** (minimum 6 characters).
+2. Complete the form, including **Service No**, **Full Name**, **Rank**,
+   **Role** and **Password** (minimum 6 characters).
 3. Click **Save User**.
+
+**Rank** is chosen from the standard NCS ranks, listed most junior first:
+
+`AC`, `CSC`, `DSC`, `SC`, `CA III`, `CA II`, `CA I`, `AIC`, `IC`, `ASC II`, `ASC I`
+
+Rank is optional. If an existing record holds a rank that is no longer on the
+standard list, editing that user keeps the old value and shows it as
+*"(existing)"* until you choose a different one.
 
 ![Add user modal](images/11-add-user-modal.png)
 
