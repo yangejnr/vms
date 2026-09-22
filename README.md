@@ -24,6 +24,17 @@ The application includes:
 - SQLite persistence for local development
 - Flask templates and static frontend assets
 
+## Documentation
+
+Full documentation lives in [`docs/`](docs/):
+
+| Document | Audience |
+| --- | --- |
+| [User Guide](docs/USER_GUIDE.md) | Reception officers and administrators — step-by-step guide with screenshots, suitable for training |
+| [Management Presentation](docs/MANAGEMENT_PRESENTATION.md) | Management briefing slides |
+| [Technical Documentation](docs/TECHNICAL_DOCUMENTATION.md) | Developers — architecture, data model, API reference and extension guide |
+| [Business Requirements Specification](docs/BUSINESS_REQUIREMENTS.md) | Formal requirements, acceptance criteria and risks |
+
 ## Users, Roles and Modules
 
 Authentication is database-backed. Every user belongs to a role, and each role
