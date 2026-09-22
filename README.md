@@ -164,6 +164,26 @@ Optional settings:
 - `NGROK_REGION` for an ngrok region
 - `PORT` for the local Flask port, defaulting to `5100`
 
+### If ngrok stops working
+
+The usual cause is a **leftover ngrok agent** from a previous run. A reserved
+domain can only be claimed by one agent at a time, so a stale process makes the
+next start fail with:
+
+```text
+ERR_NGROK_334: The endpoint 'https://…ngrok-free.dev' is already online.
+```
+
+Fix it by clearing the stale agent:
+
+```bash
+pkill -f ngrok
+```
+
+Then start the app again. The application now cleans up after itself on exit
+(including Ctrl+C and `kill`), and prints a clear message instead of a raw error
+if the endpoint is still held.
+
 ## Status
 
 **Prototype / proof of concept.** The current code demonstrates the visitor-management workflow; it is not presented as a production-hardened security system.

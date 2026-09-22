@@ -7,7 +7,9 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.security import generate_password_hash, check_password_hash
 import qrcode
 from PIL import Image, ImageOps
+import atexit
 import os
+import signal
 import base64
 import uuid
 from io import BytesIO
@@ -1724,16 +1726,37 @@ def signout_visit():
     db.session.commit()
     return jsonify({'ok': True})
 
+_ngrok_cleaned = False
+
 def start_ngrok_tunnel(port):
+    """Open an ngrok tunnel and register cleanup so the agent does not linger.
+
+    A lingering agent is the usual reason ngrok "stops working": the previous
+    run's process keeps the reserved domain claimed, so the next start fails
+    with ERR_NGROK_334 ("endpoint is already online"). We therefore disconnect
+    any tunnel already registered with the local agent, and always kill the
+    agent on exit.
+    """
     try:
         from pyngrok import conf, ngrok
+        from pyngrok.exception import PyngrokNgrokError
     except ImportError:
         print("Ngrok requested but pyngrok is not installed. Run: pip install pyngrok")
-        return
+        return None
 
     auth_token = os.environ.get('NGROK_AUTHTOKEN')
     if auth_token:
         ngrok.set_auth_token(auth_token)
+
+    # Drop tunnels left behind by a previous run of this process.
+    try:
+        for tunnel in ngrok.get_tunnels():
+            ngrok.disconnect(tunnel.public_url)
+            print(f"Closed previous tunnel: {tunnel.public_url}")
+    except PyngrokNgrokError:
+        pass  # No agent running; nothing to clean up.
+    except Exception as exc:  # noqa: BLE001
+        print(f"Could not inspect existing tunnels: {exc}")
 
     domain = os.environ.get('NGROK_DOMAIN')
     region = os.environ.get('NGROK_REGION')
@@ -1745,14 +1768,82 @@ def start_ngrok_tunnel(port):
     if config:
         connect_kwargs['pyngrok_config'] = config
 
-    public_url = ngrok.connect(**connect_kwargs)
+    try:
+        public_url = ngrok.connect(**connect_kwargs)
+    except Exception as exc:  # noqa: BLE001
+        message = str(exc)
+        print("Ngrok tunnel could not be started.")
+        if 'ERR_NGROK_334' in message or 'already online' in message:
+            print(
+                "  The endpoint is already online, which means another ngrok agent\n"
+                "  still holds it. Stop it and try again:\n"
+                "      pkill -f ngrok\n"
+                "  Or use a different reserved domain via NGROK_DOMAIN."
+            )
+        elif 'authentication failed' in message.lower() or 'ERR_NGROK_4018' in message:
+            print(
+                "  Authentication failed. Set a valid token:\n"
+                "      export NGROK_AUTHTOKEN=your_token"
+            )
+        else:
+            print(f"  {message[:300]}")
+        return None
+
+    # Always release the agent when this process exits, so the next start is clean.
+    register_ngrok_cleanup()
     print(f"Ngrok tunnel online: {public_url}")
+    return public_url
+
+
+def _shutdown_ngrok():
+    """Disconnect tunnels and stop the agent. Safe to call more than once."""
+    global _ngrok_cleaned
+    if _ngrok_cleaned:
+        return
+    _ngrok_cleaned = True
+    try:
+        from pyngrok import ngrok
+    except ImportError:
+        return
+    try:
+        ngrok.disconnect()
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        ngrok.kill()
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def register_ngrok_cleanup():
+    """Ensure the ngrok agent dies with this process.
+
+    ``atexit`` alone is not enough: it does not run when the process is stopped
+    with SIGTERM or SIGINT (Ctrl+C, ``kill``, ``pkill``), which is exactly how a
+    server is normally stopped. Installing signal handlers covers those cases.
+    """
+    atexit.register(_shutdown_ngrok)
+
+    def _handler(signum, frame):
+        _shutdown_ngrok()
+        # Restore default behaviour and re-raise so the exit code stays correct.
+        signal.signal(signum, signal.SIG_DFL)
+        os.kill(os.getpid(), signum)
+
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        try:
+            signal.signal(sig, _handler)
+        except (ValueError, OSError):
+            pass  # Not on the main thread, or unsupported platform.
+
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5100))
     debug = os.environ.get('FLASK_DEBUG', '1').lower() in {'1', 'true', 'yes', 'on'}
     enable_ngrok = os.environ.get('NCS_ENABLE_NGROK', '').lower() in {'1', 'true', 'yes', 'on'}
 
+    # With the reloader, only the child process (WERKZEUG_RUN_MAIN=true) should
+    # own the tunnel; the parent would otherwise hold a second agent.
     if enable_ngrok and (not debug or os.environ.get('WERKZEUG_RUN_MAIN') == 'true'):
         start_ngrok_tunnel(port)
 

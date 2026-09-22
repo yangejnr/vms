@@ -1053,6 +1053,57 @@ Swap both, and call `/api/visitors/rebuild-face-index` to regenerate stored valu
 for existing visitors. Keep the storage in `Visitor.face_fingerprint` (TEXT) or
 introduce a new column via the migration helper.
 
+### 18.1 The ngrok tunnel lifecycle
+
+Ngrok support is optional and off by default. When enabled, the tunnel is started
+from `__main__` and the agent must be cleaned up when the process ends.
+
+**The failure mode.** A reserved ngrok domain can be claimed by only **one agent at
+a time**. If a previous run's agent is still alive, the next start fails:
+
+```text
+ERR_NGROK_334: The endpoint 'https://…ngrok-free.dev' is already online.
+```
+
+This is easy to trigger: the Flask reloader spawns a parent and a child process, so
+a naive implementation starts **two** agents, and a server stopped with `kill` or
+`pkill` leaves its agent orphaned.
+
+**How the current code handles it:**
+
+| Concern | Handling |
+| --- | --- |
+| Duplicate agents from the reloader | Only the child (`WERKZEUG_RUN_MAIN=true`) starts a tunnel |
+| Tunnels left by a previous run | `start_ngrok_tunnel` disconnects existing tunnels first |
+| Clean exit | `atexit` handler |
+| `SIGTERM` / `SIGINT` (Ctrl+C, `kill`, `pkill`) | Explicit signal handlers — `atexit` does **not** run on signals |
+| Unhelpful raw errors | `ERR_NGROK_334` and auth failures print an actionable message |
+
+> **Why signal handlers are required:** `atexit` only runs on normal interpreter
+> shutdown. A server is almost always stopped with a signal, so relying on
+> `atexit` alone leaves the agent running.
+
+**If you still hit `ERR_NGROK_334`**, a foreign agent holds the domain:
+
+```bash
+pkill -f ngrok
+# confirm it is gone
+ps aux | grep "[n]grok"
+# the local agent API should also be free
+ss -ltn | grep 4040
+```
+
+**Diagnostics.** The ngrok agent exposes a local API on port 4040:
+
+```bash
+curl -s http://127.0.0.1:4040/api/tunnels
+```
+
+This shows the live tunnel, its public URL, and — importantly — the **local
+address it forwards to**. If that address points at a dead port (for example
+`localhost:5101` while the app runs on `5100`), the tunnel will appear to work but
+every request will fail.
+
 ---
 
 ## 19. Troubleshooting for Developers
@@ -1067,6 +1118,8 @@ introduce a new column via the migration helper.
 | QR image not updating | Old `visit_*.png` files persist in `static/img/` |
 | JS errors around `{% if %}` in templates | The JS language server cannot parse Jinja; harmless |
 | Login succeeds but lands somewhere unexpected | Check `Role.landing_endpoint` for that user's role |
+| ngrok fails with `ERR_NGROK_334` | A stale agent holds the reserved domain — `pkill -f ngrok`, then restart |
+| ngrok tunnel "works" but the public URL 404s | The tunnel points at a dead port; check `PORT` matches the running server |
 
 ### Useful inspection commands
 
