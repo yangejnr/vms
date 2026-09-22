@@ -1,72 +1,181 @@
 {% extends "base.html" %}
 {% block content %}
-<h3 class="mb-3">Today's Visits</h3>
+<div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+  <h3 class="mb-0">Today's Visits</h3>
+  <span class="text-muted small">{{ visits|length }} visit(s) today</span>
+</div>
 
-<form class="row g-2 mb-3" onsubmit="return signoutVisit(event)">
-  <div class="col-auto">
-    <input type="text" id="signout_visit_no" class="form-control" placeholder="Visit No (e.g. NCS/25/12/11/0001)" required>
+<div class="row g-2 mb-3 align-items-start">
+  <div class="col-lg-5">
+    <div class="input-group">
+      <span class="input-group-text">Search</span>
+      <input
+        type="text"
+        id="visitSearch"
+        class="form-control"
+        placeholder="Search by name or phone"
+        autocomplete="off"
+        oninput="filterVisits()">
+      <button class="btn btn-outline-secondary" type="button" onclick="clearVisitSearch()">Clear</button>
+    </div>
   </div>
-  <div class="col-auto">
-    <button class="btn btn-danger">Sign Out</button>
+  <div class="col-lg-7">
+    <form class="row g-2 justify-content-lg-end" onsubmit="return signoutVisit(event)">
+      <div class="col-auto">
+        <input type="text" id="signout_visit_no" class="form-control" placeholder="Visit No (e.g. NCS/25/12/11/0001)" required>
+      </div>
+      <div class="col-auto">
+        <button class="btn btn-danger">Sign Out</button>
+      </div>
+      <div class="col-auto d-flex align-items-center">
+        <span id="signout_status" class="text-success"></span>
+      </div>
+    </form>
   </div>
-  <div class="col-auto">
-    <span id="signout_status" class="text-success"></span>
-  </div>
-</form>
+</div>
 
-<table class="table table-sm table-striped">
-  <thead>
-    <tr>
-      <th>Visit No</th>
-      <th>Visitor</th>
-      <th>Phone</th>
-      <th>Purpose</th>
-      <th>Status</th>
-      <th>Sign-in</th>
-      <th>Sign-out</th>
-    </tr>
-  </thead>
-  <tbody>
-    {% for v in visits %}
-    <tr>
-      <td>{{ v.visit_no }}</td>
-      <td>{{ v.fullname }}</td>
-      <td>{{ v.phone }}</td>
-      <td>{{ v.purpose }}</td>
-      <td>{{ v.status }}</td>
-      <td>{{ v.signin_time }}</td>
-      <td>{{ v.signout_time }}</td>
-    </tr>
-    {% endfor %}
-  </tbody>
-</table>
+<div class="table-responsive">
+  <table class="table table-sm table-striped align-middle" id="visitsTable">
+    <thead>
+      <tr>
+        <th>Visit No</th>
+        <th>Visitor</th>
+        <th>Phone</th>
+        <th>Purpose</th>
+        <th>Host</th>
+        <th>Destination</th>
+        <th>Status</th>
+        <th>Sign-in</th>
+        <th>Sign-out</th>
+        <th>Officer</th>
+        <th class="text-end">Action</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in visits %}
+      <tr data-name="{{ v.fullname|lower }}" data-phone="{{ v.phone|lower }}">
+        <td>{{ v.visit_no }}</td>
+        <td>{{ v.fullname }}</td>
+        <td>{{ v.phone }}</td>
+        <td>{{ v.purpose }}</td>
+        <td>{{ v.host_name }}</td>
+        <td>{{ v.destination }}</td>
+        <td>
+          {% if v.status == 'in' %}
+          <span class="badge bg-success">In</span>
+          {% else %}
+          <span class="badge bg-secondary">Out</span>
+          {% endif %}
+        </td>
+        <td>{{ v.signin_time }}</td>
+        <td>{{ v.signout_time }}</td>
+        <td>{{ v.created_by }}</td>
+        <td class="text-end">
+          {% if v.status == 'in' %}
+          <button
+            type="button"
+            class="btn btn-sm btn-danger"
+            data-visit-no="{{ v.visit_no }}"
+            onclick="signoutRow(this)">Sign Out</button>
+          {% else %}
+          <span class="text-muted small">Signed out</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+      <tr id="noVisitsRow" style="display:none;">
+        <td colspan="11" class="text-center text-muted py-3">No visits match your search.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+function filterVisits() {
+  const term = document.getElementById('visitSearch').value.trim().toLowerCase();
+  const rows = document.querySelectorAll('#visitsTable tbody tr[data-name]');
+  let visible = 0;
+
+  rows.forEach(function(row) {
+    const name = row.dataset.name || '';
+    const phone = row.dataset.phone || '';
+    const match = !term || name.includes(term) || phone.includes(term);
+    row.style.display = match ? '' : 'none';
+    if (match) visible++;
+  });
+
+  document.getElementById('noVisitsRow').style.display = visible ? 'none' : '';
+}
+
+function clearVisitSearch() {
+  document.getElementById('visitSearch').value = '';
+  filterVisits();
+}
+
 function signoutVisit(e) {
   e.preventDefault();
   const no = document.getElementById('signout_visit_no').value;
+  submitSignout(no, document.getElementById('signout_status'));
+  return false;
+}
+
+function signoutRow(button) {
+  const no = button.dataset.visitNo;
+  if (!no) return;
+  if (!window.confirm('Sign out visit ' + no + '?')) return;
+  submitSignout(no, null, button);
+}
+
+function submitSignout(visitNo, statusEl, button) {
+  if (!visitNo) return;
+
+  if (button) {
+    button.disabled = true;
+    button.innerText = 'Signing out...';
+  }
+
   const fd = new FormData();
-  fd.append('visit_no', no);
+  fd.append('visit_no', visitNo);
+
   fetch('/api/visit/signout', { method: 'POST', body: fd })
     .then(r => r.json())
     .then(d => {
-      const statusEl = document.getElementById('signout_status');
       if (d.ok) {
-        statusEl.classList.remove('text-danger');
-        statusEl.classList.add('text-success');
-        statusEl.innerText = 'Signed out.';
-        // reload table
+        if (statusEl) {
+          statusEl.classList.remove('text-danger');
+          statusEl.classList.add('text-success');
+          statusEl.innerText = 'Signed out.';
+        }
         window.location.reload();
       } else {
+        if (button) {
+          button.disabled = false;
+          button.innerText = 'Sign Out';
+        }
+        if (statusEl) {
+          statusEl.classList.remove('text-success');
+          statusEl.classList.add('text-danger');
+          statusEl.innerText = d.error || 'Error';
+        } else {
+          alert(d.error || 'Unable to sign out visit.');
+        }
+      }
+    })
+    .catch(function() {
+      if (button) {
+        button.disabled = false;
+        button.innerText = 'Sign Out';
+      }
+      if (statusEl) {
         statusEl.classList.remove('text-success');
         statusEl.classList.add('text-danger');
-        statusEl.innerText = d.error || 'Error';
+        statusEl.innerText = 'Network error.';
+      } else {
+        alert('Network error. Please try again.');
       }
     });
-  return false;
 }
 </script>
 {% endblock %}
-

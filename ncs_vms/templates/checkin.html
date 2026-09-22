@@ -1,88 +1,201 @@
 {% extends "base.html" %}
 {% block content %}
+<style>
+  .camera-frame {
+    display: inline-block;
+    width: 100%;
+    overflow: hidden;
+    border: 4px solid #adb5bd;
+    border-radius: 8px;
+    background: #111;
+  }
+
+  .face-capture-layout {
+    display: grid;
+    grid-template-columns: minmax(320px, 420px) 180px;
+    gap: 1rem;
+    align-items: start;
+  }
+
+  .camera-column {
+    min-width: 0;
+  }
+
+  .camera-frame.match-found {
+    border-color: #198754;
+    box-shadow: 0 0 0 4px rgba(25, 135, 84, 0.16);
+  }
+
+  .camera-frame.new-face {
+    border-color: #dc3545;
+    box-shadow: 0 0 0 4px rgba(220, 53, 69, 0.16);
+  }
+
+  .camera-frame.multiple-faces {
+    border-color: #ffc107;
+    box-shadow: 0 0 0 4px rgba(255, 193, 7, 0.18);
+  }
+
+  .camera-frame video {
+    display: block;
+    width: 100%;
+    aspect-ratio: 4 / 3;
+    object-fit: cover;
+  }
+
+  .camera-status {
+    min-height: 30px;
+    font-weight: 700;
+  }
+
+  .portrait-preview {
+    width: 180px;
+    max-width: 100%;
+    aspect-ratio: 4 / 5;
+    object-fit: cover;
+    border: 1px solid #ced4da;
+    border-radius: 8px;
+    background: #fff;
+  }
+
+  .portrait-placeholder {
+    display: grid;
+    width: 180px;
+    max-width: 100%;
+    aspect-ratio: 4 / 5;
+    place-items: center;
+    border: 1px dashed #adb5bd;
+    border-radius: 8px;
+    color: #6c757d;
+    text-align: center;
+    background: #fff;
+    padding: 1rem;
+  }
+
+  @media (max-width: 991.98px) {
+    .face-capture-layout {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
 <h3 class="mb-3">Visitor Check-In</h3>
 
-<!-- STEP 1: Search returning visitor -->
 <div class="card mb-3">
   <div class="card-body">
     <h5>Step 1: Identify Visitor</h5>
     <div class="row">
-      <div class="col-md-6 mb-3">
+      <div class="col-lg-5 mb-3">
         <label class="form-label">Search by Phone or Email</label>
         <div class="input-group">
           <input type="text" id="searchTerm" class="form-control" placeholder="Phone or Email">
           <button class="btn btn-primary" onclick="searchByText()">Search</button>
         </div>
       </div>
-      <div class="col-md-6 mb-3">
-        <label class="form-label">Or Search by Photo</label>
-        <div>
-          <video id="video" width="320" height="240" autoplay style="background:#ccc;"></video>
-          <canvas id="canvas" width="320" height="240" style="display:none;"></canvas>
+      <div class="col-lg-7 mb-3">
+        <label class="form-label">Automatic Face Check</label>
+        <div class="face-capture-layout">
+          <div class="camera-column">
+            <div id="cameraFrame" class="camera-frame">
+              <video id="video" autoplay muted playsinline></video>
+            </div>
+            <canvas id="canvas" width="480" height="600" style="display:none;"></canvas>
+            <div id="cameraStatus" class="camera-status text-muted mt-2">Starting camera...</div>
+            <button type="button" class="btn btn-secondary mt-2" onclick="searchByPhoto()">Capture & Search</button>
+          </div>
+          <div>
+            <div id="cameraPortraitPlaceholder" class="portrait-placeholder">Captured portrait will appear here.</div>
+            <img id="cameraPortrait" class="portrait-preview" src="" alt="Captured visitor portrait" style="display:none;">
+          </div>
         </div>
-        <button type="button" class="btn btn-secondary mt-2" onclick="searchByPhoto()">Capture & Search</button>
       </div>
     </div>
     <div id="searchResult" class="mt-2"></div>
   </div>
 </div>
 
-<!-- STEP 2A: New Visitor Registration (hidden by default) -->
 <div id="newVisitorCard" class="card mb-3" style="display:none;">
   <div class="card-body">
     <h5>New Visitor Registration</h5>
-    <form id="newVisitorForm" onsubmit="return createVisitor(event)">
-      <div class="row mb-2">
-        <div class="col-md-6">
-          <label>Full Name</label>
-          <input name="fullname" class="form-control" required>
-        </div>
-        <div class="col-md-3">
-          <label>Phone</label>
-          <input name="phone" class="form-control" required>
-        </div>
-        <div class="col-md-3">
-          <label>Email (optional)</label>
-          <input name="email" class="form-control">
-        </div>
+    <div class="row g-4">
+      <div class="col-lg-8">
+        <form id="newVisitorForm" onsubmit="return createVisitor(event)">
+          <div class="row mb-2">
+            <div class="col-md-6">
+              <label>Full Name</label>
+              <input name="fullname" class="form-control" required>
+            </div>
+            <div class="col-md-3">
+              <label>Phone</label>
+              <input id="visitorPhone" name="phone" class="form-control" onblur="lookupExistingVisitor(this.value)" required>
+            </div>
+            <div class="col-md-3">
+              <label>Email (optional)</label>
+              <input id="visitorEmail" name="email" class="form-control" onblur="lookupExistingVisitor(this.value)">
+            </div>
+          </div>
+          <div class="row mb-2">
+            <div class="col-md-3">
+              <label>Gender</label>
+              <select name="gender" class="form-select">
+                <option value="">Select</option>
+                <option>Female</option>
+                <option>Male</option>
+              </select>
+            </div>
+          </div>
+          <div class="mb-2">
+            <label>Address</label>
+            <textarea name="address" class="form-control" rows="2"></textarea>
+          </div>
+          <input type="hidden" name="photo_data" id="photo_data">
+          <button class="btn btn-success">Save Visitor</button>
+          <span id="newVisitorStatus" class="ms-2 text-success"></span>
+        </form>
       </div>
-      <div class="mb-2">
-        <label>Address</label>
-        <textarea name="address" class="form-control" rows="2"></textarea>
+      <div class="col-lg-4">
+        <label class="form-label">Professional Portrait</label>
+        <div id="formPortraitPlaceholder" class="portrait-placeholder">Capture a single face to create a white-background portrait.</div>
+        <img id="formPortrait" class="portrait-preview" src="" alt="New visitor portrait" style="display:none;">
+        <div class="form-text mt-2">Keep only one person in frame before saving.</div>
       </div>
-      <!-- store captured photo for new visitor -->
-      <input type="hidden" name="photo_data" id="photo_data">
-      <button class="btn btn-success">Save Visitor</button>
-      <span id="newVisitorStatus" class="ms-2 text-success"></span>
-    </form>
+    </div>
   </div>
 </div>
 
-<!-- STEP 2B: Visit Form (shown for both new + returning) -->
 <div id="visitCard" class="card mb-3" style="display:none;">
   <div class="card-body">
     <h5>Visit Details</h5>
+    <div id="activeVisitAlert" class="alert alert-warning" style="display:none;"></div>
     <form id="visitForm" onsubmit="return createVisit(event)">
       <input type="hidden" id="visitor_id" name="visitor_id" required>
       <div class="row mb-2">
-        <div class="col-md-4">
+        <div class="col-md-3">
           <label>Purpose</label>
-          <select name="purpose" class="form-select" required>
+          <select id="visitPurpose" name="purpose" class="form-select" onchange="toggleVisitPurposeFields()" required>
             <option value="">Select</option>
             <option value="official">Official</option>
             <option value="personal">Personal</option>
           </select>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3 personal-visit-field" style="display:none;">
+          <label>Host / Officer to Visit</label>
+          <input id="hostName" name="host_name" class="form-control">
+        </div>
+        <div class="col-md-3 personal-visit-field" style="display:none;">
+          <label>Department / Destination</label>
+          <input name="destination" class="form-control">
+        </div>
+        <div class="col-md-3">
           <label>Group Visit?</label>
           <select id="groupVisit" class="form-select" onchange="toggleGroup()">
             <option value="no">No</option>
             <option value="yes">Yes</option>
           </select>
         </div>
-        <div class="col-md-4" id="groupSizeDiv" style="display:none;">
+        <div class="col-md-3 mt-2" id="groupSizeDiv" style="display:none;">
           <label>Number of Persons</label>
-          <input name="group_size" class="form-control" value="1">
+          <input name="group_size" class="form-control" type="number" min="1" value="1">
         </div>
       </div>
       <div class="mb-2">
@@ -103,18 +216,98 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="https://cdn.jsdelivr.net/npm/face-api.js@0.22.2/dist/face-api.min.js"></script>
 <script>
-// Start camera
 let videoStream = null;
-if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-  navigator.mediaDevices.getUserMedia({ video: true })
-    .then(function(stream) {
-      videoStream = stream;
-      const video = document.getElementById('video');
-      video.srcObject = stream;
-      video.play();
-    })
-    .catch(err => console.error('Camera error', err));
+let faceDetector = null;
+let detectorMode = null;
+let lastFaceBox = null;
+let faceScanTimer = null;
+let searchInProgress = false;
+let lastSearchAt = 0;
+
+const FACE_API_MODEL_URL = 'https://cdn.jsdelivr.net/gh/justadudewhohacks/face-api.js@0.22.2/weights';
+
+const video = document.getElementById('video');
+const canvas = document.getElementById('canvas');
+const cameraFrame = document.getElementById('cameraFrame');
+const cameraStatus = document.getElementById('cameraStatus');
+
+function setCameraState(state, message) {
+  cameraFrame.classList.remove('match-found', 'new-face', 'multiple-faces');
+  cameraStatus.classList.remove('text-muted', 'text-success', 'text-danger', 'text-warning');
+
+  if (state) {
+    cameraFrame.classList.add(state);
+  }
+
+  if (state === 'match-found') {
+    cameraStatus.classList.add('text-success');
+  } else if (state === 'new-face') {
+    cameraStatus.classList.add('text-danger');
+  } else if (state === 'multiple-faces') {
+    cameraStatus.classList.add('text-warning');
+  } else {
+    cameraStatus.classList.add('text-muted');
+  }
+
+  cameraStatus.innerText = message;
+}
+
+function setPortrait(dataURL) {
+  if (!dataURL) return;
+  document.getElementById('photo_data').value = dataURL;
+
+  const previews = [
+    [document.getElementById('cameraPortrait'), document.getElementById('cameraPortraitPlaceholder')],
+    [document.getElementById('formPortrait'), document.getElementById('formPortraitPlaceholder')]
+  ];
+
+  previews.forEach(function(pair) {
+    const img = pair[0];
+    const placeholder = pair[1];
+    img.src = dataURL;
+    img.style.display = 'block';
+    placeholder.style.display = 'none';
+  });
+}
+
+function cropProfessionalPortrait(faceBox) {
+  if (!video.videoWidth || !video.videoHeight) {
+    return null;
+  }
+
+  const portraitWidth = 480;
+  const portraitHeight = 600;
+  const ctx = canvas.getContext('2d');
+  canvas.width = portraitWidth;
+  canvas.height = portraitHeight;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, portraitWidth, portraitHeight);
+
+  let sx;
+  let sy;
+  let sw;
+  let sh;
+
+  if (faceBox) {
+    const centerX = faceBox.x + faceBox.width / 2;
+    const centerY = faceBox.y + faceBox.height / 2;
+    sw = Math.min(video.videoWidth, faceBox.width * 2.6);
+    sh = Math.min(video.videoHeight, faceBox.height * 3.4);
+    sx = Math.max(0, Math.min(video.videoWidth - sw, centerX - sw / 2));
+    sy = Math.max(0, Math.min(video.videoHeight - sh, centerY - faceBox.height * 1.25));
+  } else {
+    sw = Math.min(video.videoWidth, video.videoHeight * 0.8);
+    sh = Math.min(video.videoHeight, sw * 1.25);
+    sx = Math.max(0, (video.videoWidth - sw) / 2);
+    sy = Math.max(0, (video.videoHeight - sh) / 2);
+  }
+
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(video, sx, sy, sw, sh, 0, 0, portraitWidth, portraitHeight);
+  return canvas.toDataURL('image/jpeg', 0.92);
 }
 
 function toggleGroup() {
@@ -122,7 +315,16 @@ function toggleGroup() {
   document.getElementById('groupSizeDiv').style.display = v === 'yes' ? 'block' : 'none';
 }
 
+function toggleVisitPurposeFields() {
+  const isPersonal = document.getElementById('visitPurpose').value === 'personal';
+  document.querySelectorAll('.personal-visit-field').forEach(function(field) {
+    field.style.display = isPersonal ? 'block' : 'none';
+  });
+  document.getElementById('hostName').required = isPersonal;
+}
+
 function showNewVisitorForm() {
+  clearActiveVisitAlert();
   document.getElementById('newVisitorCard').style.display = 'block';
   document.getElementById('visitCard').style.display = 'block';
 }
@@ -133,7 +335,6 @@ function showVisitFormOnly(visitor) {
   document.getElementById('visitor_id').value = visitor.id;
 }
 
-// text search
 function searchByText() {
   const q = document.getElementById('searchTerm').value;
   if (!q) return;
@@ -142,77 +343,211 @@ function searchByText() {
     .then(handleSearchResult);
 }
 
-// photo search (for now, just capture + treat as "new" if not found)
-function searchByPhoto() {
-  const video = document.getElementById('video');
-  const canvas = document.getElementById('canvas');
-  const ctx = canvas.getContext('2d');
-  ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-  const dataURL = canvas.toDataURL('image/jpeg');
-  // store photo in hidden field so if new visitor is created, we save it
-  document.getElementById('photo_data').value = dataURL;
+function lookupExistingVisitor(value) {
+  const q = (value || '').trim();
+  if (!q) return;
 
-  const div = document.getElementById('searchResult');
-  div.innerHTML = '<span class="text-warning">Photo captured. No biometric search yet; please register visitor.</span>';
-  showNewVisitorForm();
+  fetch('/api/visitor/search?q=' + encodeURIComponent(q))
+    .then(r => r.json())
+    .then(function(d) {
+      if (d.found) {
+        setCameraState('match-found', 'Existing visitor found. Continue with visit details.');
+        document.getElementById('newVisitorStatus').innerText = '';
+        handleSearchResult(d);
+      }
+    });
+}
+
+function searchByPhoto() {
+  const dataURL = cropProfessionalPortrait(lastFaceBox);
+  if (!dataURL) {
+    setCameraState('new-face', 'Camera is not ready yet.');
+    return;
+  }
+  setPortrait(dataURL);
+  runFaceSearch(dataURL);
+}
+
+function runFaceSearch(dataURL) {
+  if (searchInProgress) return;
+  searchInProgress = true;
+  setCameraState(null, 'Checking face against visitor records...');
+
+  const fd = new FormData();
+  fd.append('photo_data', dataURL);
+
+  fetch('/api/visitor/face-search', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(function(d) {
+      if (d.portrait) {
+        setPortrait(d.portrait);
+      }
+
+      if (d.ok && d.found) {
+        setCameraState('match-found', 'Visitor found in the system.');
+        handleSearchResult(d);
+      } else {
+        setCameraState('new-face', 'New visitor detected. Register before creating a visit.');
+        document.getElementById('searchResult').innerHTML = '<span class="text-danger">Face not found. Register as new visitor.</span>';
+        document.getElementById('visitor_id').value = '';
+        showNewVisitorForm();
+      }
+    })
+    .catch(function() {
+      setCameraState('new-face', 'Face check failed. Use manual search or try again.');
+    })
+    .finally(function() {
+      searchInProgress = false;
+      lastSearchAt = Date.now();
+    });
 }
 
 function handleSearchResult(d) {
   const div = document.getElementById('searchResult');
   if (!d.found) {
     div.innerHTML = '<span class="text-danger">Visitor not found. Register as new.</span>';
+    document.getElementById('visitor_id').value = '';
     showNewVisitorForm();
     return;
   }
   document.getElementById('visitor_id').value = d.visitor.id;
-  div.innerHTML = '<b>' + d.visitor.fullname + '</b> (Phone: ' + d.visitor.phone + ')<br>' +
-                  'Previous visits: ' + d.history.length;
+  div.innerHTML = '<div class="alert alert-success mb-0">' +
+                  '<div class="d-flex flex-wrap justify-content-between gap-2 align-items-start">' +
+                  '<div>' +
+                  '<b>' + escapeHtml(d.visitor.fullname) + '</b><br>' +
+                  'Phone: ' + escapeHtml(d.visitor.phone || '') + '<br>' +
+                  'Email: ' + escapeHtml(d.visitor.email || 'Not provided') + '<br>' +
+                  'Gender: ' + escapeHtml(d.visitor.gender || 'Not provided') + '<br>' +
+                  'Address: ' + escapeHtml(d.visitor.address || 'Not provided') + '<br>' +
+                  'Previous visits: ' + d.history.length +
+                  '</div>' +
+                  '<button type="button" class="btn btn-sm btn-outline-success" onclick="showEditVisitorForm()">Edit Record</button>' +
+                  '</div>' +
+                  '</div>';
+  div.dataset.visitor = JSON.stringify(d.visitor);
+  div.dataset.history = JSON.stringify(d.history || []);
   showVisitFormOnly(d.visitor);
+
+  const activeVisit = findActiveVisitToday(d.history);
+  if (activeVisit) {
+    showActiveVisitAlert(
+      d.visitor.fullname + ' already has an active visit today (' + activeVisit.visit_no + ').',
+      activeVisit
+    );
+  } else {
+    clearActiveVisitAlert();
+  }
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function showEditVisitorForm() {
+  const div = document.getElementById('searchResult');
+  const visitor = JSON.parse(div.dataset.visitor || '{}');
+  if (!visitor.id) return;
+
+  div.innerHTML = '<div class="card border-success">' +
+                  '<div class="card-body">' +
+                  '<h6 class="mb-3">Edit Visitor Record</h6>' +
+                  '<form id="editVisitorForm" onsubmit="return updateVisitor(event)">' +
+                  '<input type="hidden" name="visitor_id" value="' + visitor.id + '">' +
+                  '<div class="row g-2">' +
+                  '<div class="col-md-4"><label>Full Name</label><input name="fullname" class="form-control" required value="' + escapeHtml(visitor.fullname || '') + '"></div>' +
+                  '<div class="col-md-3"><label>Phone</label><input name="phone" class="form-control" required value="' + escapeHtml(visitor.phone || '') + '"></div>' +
+                  '<div class="col-md-3"><label>Email</label><input name="email" class="form-control" value="' + escapeHtml(visitor.email || '') + '"></div>' +
+                  '<div class="col-md-2"><label>Gender</label><select name="gender" class="form-select">' +
+                  '<option value="">Select</option>' +
+                  '<option ' + (visitor.gender === 'Female' ? 'selected' : '') + '>Female</option>' +
+                  '<option ' + (visitor.gender === 'Male' ? 'selected' : '') + '>Male</option>' +
+                  '</select></div>' +
+                  '<div class="col-12"><label>Address</label><textarea name="address" class="form-control" rows="2">' + escapeHtml(visitor.address || '') + '</textarea></div>' +
+                  '</div>' +
+                  '<div class="mt-3 d-flex gap-2 align-items-center">' +
+                  '<button class="btn btn-success btn-sm" type="submit">Save Changes</button>' +
+                  '<button class="btn btn-outline-secondary btn-sm" type="button" onclick="restoreVisitorDetails()">Cancel</button>' +
+                  '<span id="editVisitorStatus" class="small"></span>' +
+                  '</div>' +
+                  '</form>' +
+                  '</div>' +
+                  '</div>';
+}
+
+function restoreVisitorDetails() {
+  const div = document.getElementById('searchResult');
+  const visitor = JSON.parse(div.dataset.visitor || '{}');
+  const history = JSON.parse(div.dataset.history || '[]');
+  if (visitor.id) {
+    handleSearchResult({ found: true, visitor: visitor, history: history });
+  }
+}
+
+function updateVisitor(e) {
+  e.preventDefault();
+  const form = e.target;
+  const visitorId = form.visitor_id.value;
+  const fd = new FormData(form);
+
+  fetch('/api/visitor/' + encodeURIComponent(visitorId) + '/update', { method: 'POST', body: fd })
+    .then(async r => {
+      const data = await r.json();
+      data.status = r.status;
+      return data;
+    })
+    .then(function(d) {
+      const status = document.getElementById('editVisitorStatus');
+      if (d.ok) {
+        setCameraState('match-found', 'Visitor record updated. Continue with visit details.');
+        handleSearchResult({ found: true, visitor: d.visitor, history: d.history || [] });
+      } else if (d.error === 'visitor_already_exists') {
+        status.className = 'small text-danger';
+        status.innerText = 'Another visitor already uses that ' + (d.duplicate_field || 'record') + '.';
+      } else {
+        status.className = 'small text-danger';
+        status.innerText = d.error || 'Unable to update record.';
+      }
+    });
+  return false;
 }
 
 function createVisitor(e) {
   e.preventDefault();
   const form = e.target;
   const fd = new FormData(form);
+
+  if (!fd.get('photo_data')) {
+    const dataURL = cropProfessionalPortrait(lastFaceBox);
+    if (dataURL) {
+      setPortrait(dataURL);
+      fd.set('photo_data', dataURL);
+    }
+  }
+
   fetch('/api/visitor/create', { method: 'POST', body: fd })
-    .then(r => r.json())
+    .then(async r => {
+      const data = await r.json();
+      data.status = r.status;
+      return data;
+    })
     .then(d => {
       if (d.ok) {
-        // set visitor id for the visit form
         document.getElementById('visitor_id').value = d.visitor_id;
-        // success text
         document.getElementById('newVisitorStatus').innerText = 'Record saved successfully.';
-        // hide registration card
         document.getElementById('newVisitorCard').style.display = 'none';
-        // ensure visit card visible
         document.getElementById('visitCard').style.display = 'block';
-
-        // freeze current frame as static passport image
-        const video = document.getElementById('video');
-        const canvas = document.getElementById('canvas');
-        const ctx = canvas.getContext('2d');
-        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const dataURL = canvas.toDataURL('image/jpeg');
-
-        let img = document.getElementById('passportPreview');
-        if (!img) {
-          img = document.createElement('img');
-          img.id = 'passportPreview';
-          img.style.width = '120px';
-          img.style.height = '120px';
-          img.style.borderRadius = '4px';
-          img.style.border = '1px solid #ccc';
-          img.style.display = 'block';
-          img.style.marginTop = '8px';
-          document.getElementById('searchResult').appendChild(img);
-        }
-        img.src = dataURL;
-
-        // stop live video (optional)
-        if (video.srcObject) {
-          video.srcObject.getTracks().forEach(t => t.stop());
-          video.srcObject = null;
-        }
+        setCameraState('match-found', 'New visitor saved. Continue with visit details.');
+      } else if ((d.error === 'visitor_already_exists' || d.error === 'phone_already_exists') && d.visitor) {
+        document.getElementById('newVisitorStatus').innerText = '';
+        setCameraState('match-found', 'Visitor already exists by ' + (d.duplicate_field || 'record') + '. Continue with visit details.');
+        handleSearchResult({ found: true, visitor: d.visitor, history: d.history || [] });
+      } else {
+        document.getElementById('newVisitorStatus').innerText = d.error || 'Unable to save visitor.';
       }
     });
   return false;
@@ -234,10 +569,150 @@ function createVisit(e) {
         document.getElementById('visitNo').innerText = 'Visit No: ' + d.visit_no;
         document.getElementById('qrImage').src = '/static/' + d.qr;
         document.getElementById('qrSection').style.display = 'block';
+        window.setTimeout(function() {
+          window.location.href = "{{ url_for('checkin') }}";
+        }, 900);
+      } else if (d.error === 'active_visit_exists') {
+        showActiveVisitAlert(d.message, d.active_visit);
+      } else {
+        document.getElementById('visitStatus').innerText = d.error || 'Unable to create visit.';
       }
     });
   return false;
 }
+
+function showActiveVisitAlert(message, activeVisit) {
+  const alertEl = document.getElementById('activeVisitAlert');
+  let html = '<b>Active visit already open.</b><br>' + escapeHtml(message || 'This visitor already has an active visit today.');
+  if (activeVisit) {
+    html += '<div class="mt-2 small">' +
+            'Visit No: <b>' + escapeHtml(activeVisit.visit_no || '') + '</b><br>' +
+            'Purpose: ' + escapeHtml(activeVisit.purpose || '') + '<br>' +
+            'Signed in: ' + escapeHtml(activeVisit.signin_time || '') +
+            '</div>' +
+            '<a class="btn btn-sm btn-outline-dark mt-2" href="{{ url_for('visits_today') }}">Go to Today\'s Visits to sign out</a>';
+  }
+  alertEl.innerHTML = html;
+  alertEl.style.display = 'block';
+  document.getElementById('visitStatus').innerText = '';
+}
+
+function clearActiveVisitAlert() {
+  const alertEl = document.getElementById('activeVisitAlert');
+  alertEl.style.display = 'none';
+  alertEl.innerHTML = '';
+}
+
+function findActiveVisitToday(history) {
+  const today = new Date().toISOString().slice(0, 10);
+  return (history || []).find(function(v) {
+    return v.status === 'in' && v.date === today;
+  }) || null;
+}
+
+function normalizeNativeFace(face) {
+  return face.boundingBox;
+}
+
+function normalizeFaceApiDetection(detection) {
+  const box = detection.box;
+  return {
+    x: box.x,
+    y: box.y,
+    width: box.width,
+    height: box.height
+  };
+}
+
+async function detectFaces() {
+  if (detectorMode === 'native' && faceDetector) {
+    const faces = await faceDetector.detect(video);
+    return faces.map(normalizeNativeFace);
+  }
+
+  if (detectorMode === 'face-api' && window.faceapi) {
+    const options = new faceapi.TinyFaceDetectorOptions({
+      inputSize: 416,
+      scoreThreshold: 0.45
+    });
+    const detections = await faceapi.detectAllFaces(video, options);
+    return detections.map(normalizeFaceApiDetection);
+  }
+
+  return [];
+}
+
+async function scanForFaces() {
+  if (!detectorMode || searchInProgress || !video.videoWidth) return;
+
+  try {
+    const faces = await detectFaces();
+    if (!faces.length) {
+      setCameraState(null, 'Place one face inside the camera frame.');
+      return;
+    }
+
+    if (faces.length > 1) {
+      lastFaceBox = null;
+      setCameraState('multiple-faces', 'Multiple faces detected. Keep only one person in the camera frame.');
+      return;
+    }
+
+    lastFaceBox = faces[0];
+    setCameraState(null, 'Single face detected. Press Capture & Search when ready.');
+  } catch (err) {
+    setCameraState(null, 'Face detection is unavailable. Use Capture & Search.');
+  }
+}
+
+async function loadFaceApiDetector() {
+  if (!window.faceapi) {
+    setCameraState(null, 'Face library could not load. Use Capture & Search.');
+    return false;
+  }
+
+  setCameraState(null, 'Loading face recognition library...');
+
+  try {
+    await faceapi.nets.tinyFaceDetector.loadFromUri(FACE_API_MODEL_URL);
+    detectorMode = 'face-api';
+    return true;
+  } catch (err) {
+    setCameraState(null, 'Face library models could not load. Use Capture & Search.');
+    return false;
+  }
+}
+
+async function startFaceScan() {
+  if ('FaceDetector' in window) {
+    faceDetector = new FaceDetector({ fastMode: true, maxDetectedFaces: 2 });
+    detectorMode = 'native';
+    faceScanTimer = window.setInterval(scanForFaces, 1200);
+    setCameraState(null, 'Place one face inside the camera frame.');
+  } else {
+    const loaded = await loadFaceApiDetector();
+    if (loaded) {
+      faceScanTimer = window.setInterval(scanForFaces, 1400);
+      setCameraState(null, 'Place one face inside the camera frame.');
+    }
+  }
+}
+
+if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 960, height: 720 } })
+    .then(function(stream) {
+      videoStream = stream;
+      video.srcObject = stream;
+      video.onloadedmetadata = function() {
+        video.play();
+        startFaceScan();
+      };
+    })
+    .catch(function() {
+      setCameraState('new-face', 'Camera permission is required for face check.');
+    });
+} else {
+  setCameraState('new-face', 'Camera is not available in this browser.');
+}
 </script>
 {% endblock %}
-

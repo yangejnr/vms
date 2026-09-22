@@ -1,32 +1,71 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
     <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>NCS Visitor Management</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <style>
+      body {
+        background: #f4f7f5;
+      }
+
+      .app-navbar {
+        background: #0f6f3f;
+        box-shadow: 0 8px 24px rgba(15, 111, 63, 0.15);
+      }
+
+      .app-logo {
+        width: 44px;
+        height: 44px;
+        object-fit: contain;
+        padding: 4px;
+        background: #fff;
+        border-radius: 6px;
+      }
+
+      .navbar-brand span {
+        display: block;
+        line-height: 1.1;
+      }
+
+      .brand-title {
+        font-weight: 800;
+      }
+
+      .brand-subtitle {
+        font-size: 0.78rem;
+        opacity: 0.82;
+      }
+
+      .content-shell {
+        padding-top: 1.5rem;
+        padding-bottom: 2rem;
+      }
+    </style>
 </head>
 <body>
-<nav class="navbar navbar-dark bg-success mb-3">
+<nav class="navbar navbar-expand-md navbar-dark app-navbar">
   <div class="container-fluid">
-    <span class="navbar-brand mb-0 h1">NCS VMS</span>
-  </div>
-</nav>
-
-<nav class="navbar navbar-dark bg-success mb-3">
-  <div class="container-fluid">
-    <a class="navbar-brand mb-0 h1" href="{{ url_for('checkin') }}">NCS VMS</a>
-    <div>
-      <a href="{{ url_for('checkin') }}" class="btn btn-sm btn-light me-2">Check-In</a>
-      <a href="{{ url_for('visits_today') }}" class="btn btn-sm btn-light">Today’s Visits</a>
+    <a class="navbar-brand d-flex align-items-center gap-2" href="{{ url_for('checkin') }}">
+      <img class="app-logo" src="{{ url_for('static', filename='img/logo.png') }}" alt="NCS logo">
+      <span>
+        <span class="brand-title">NCS VMS</span>
+        <span class="brand-subtitle">Visitor Management System</span>
+      </span>
+    </a>
+    <div class="d-flex align-items-center gap-2">
+      <a href="{{ url_for('checkin') }}" class="btn btn-sm btn-light">Check-In</a>
+      <a href="{{ url_for('visits_today') }}" class="btn btn-sm btn-outline-light">Today’s Visits</a>
+      <a href="{{ url_for('logout') }}" class="btn btn-sm btn-warning">Logout</a>
     </div>
   </div>
 </nav>
 
-<div class="container">
+<div class="container content-shell">
   {% block content %}{% endblock %}
 </div>
 <script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
 {% block scripts %}{% endblock %}
 </body>
 </html>
-

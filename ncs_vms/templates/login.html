@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="NCS Visitor Management System — register guests, issue visit references, capture entry details and monitor daily movement from one secure reception workflow.">
+    <meta name="theme-color" content="#0f6f3f">
+    <title>NCS Visitor Management System</title>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='img/logo.png') }}">
+    <link rel="preload" as="image" href="{{ url_for('static', filename='img/logo.png') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/bootstrap.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/landing.css') }}">
+</head>
+<body>
+<a class="skip-link" href="#main">Skip to main content</a>
+
+<header class="site-header">
+    <nav class="container d-flex flex-wrap align-items-center justify-content-between py-3" aria-label="Primary">
+        <a class="d-flex align-items-center gap-2 text-decoration-none" href="{{ url_for('index') }}">
+            <img class="brand-logo" src="{{ url_for('static', filename='img/logo.png') }}" alt="NCS logo" width="48" height="48" decoding="async">
+            <span>
+                <span class="brand-title">NCS VMS</span>
+                <span class="brand-subtitle">Visitor Management System</span>
+            </span>
+        </a>
+        <button class="btn btn-ncs" type="button" data-bs-toggle="modal" data-bs-target="#loginModal">
+            Staff Login
+        </button>
+    </nav>
+</header>
+
+<main id="main">
+    <section class="hero" aria-labelledby="heroTitle">
+        <div class="container hero-inner">
+            <h1 id="heroTitle">Digital visitor control for secure NCS facilities.</h1>
+            <p>
+                Register guests, issue visit references, capture entry details, and monitor daily movement from one
+                reception workflow built for accountable front-desk operations.
+            </p>
+            <div class="hero-actions">
+                <button class="btn btn-light btn-lg" type="button" data-bs-toggle="modal" data-bs-target="#loginModal">
+                    Open Secure Login
+                </button>
+                <a class="btn btn-outline-light btn-lg" href="#capabilities">See what it does</a>
+            </div>
+            <div class="row stat-row g-3">
+                <div class="col-6 col-md-3">
+                    <span class="stat-value">QR</span>
+                    <span class="stat-label">Visit slips</span>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="stat-value">Live</span>
+                    <span class="stat-label">Daily records</span>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="stat-value">Photo</span>
+                    <span class="stat-label">Visitor capture</span>
+                </div>
+                <div class="col-6 col-md-3">
+                    <span class="stat-value">Fast</span>
+                    <span class="stat-label">Return lookup</span>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section-band" id="capabilities" aria-labelledby="capabilitiesTitle">
+        <div class="container">
+            <div class="row g-4 align-items-start">
+                <div class="col-lg-5">
+                    <h2 class="section-title" id="capabilitiesTitle">What the system supports</h2>
+                    <p class="text-muted">
+                        The prototype replaces paper registers with a searchable record of visitors, visits, sign-in
+                        status, and visit slips that can be checked at the reception desk.
+                    </p>
+                </div>
+                <div class="col-lg-7">
+                    <div class="row g-3">
+                        <div class="col-md-6">
+                            <article class="info-card">
+                                <span class="info-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                                        <circle cx="9" cy="7" r="4"></circle>
+                                        <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+                                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                    </svg>
+                                </span>
+                                <h3>Visitor Registration</h3>
+                                <p class="mb-0">Capture names, contact information, address details, and optional photos for new visitors.</p>
+                            </article>
+                        </div>
+                        <div class="col-md-6">
+                            <article class="info-card">
+                                <span class="info-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="11" cy="11" r="7"></circle>
+                                        <path d="m21 21-4.3-4.3"></path>
+                                    </svg>
+                                </span>
+                                <h3>Returning Visitor Lookup</h3>
+                                <p class="mb-0">Search by phone or email to reuse existing visitor records and view previous visit history.</p>
+                            </article>
+                        </div>
+                        <div class="col-md-6">
+                            <article class="info-card">
+                                <span class="info-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M9 11l3 3L22 4"></path>
+                                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
+                                    </svg>
+                                </span>
+                                <h3>Visit Tracking</h3>
+                                <p class="mb-0">Create official or personal visit entries with documents carried, group size, and active status.</p>
+                            </article>
+                        </div>
+                        <div class="col-md-6">
+                            <article class="info-card">
+                                <span class="info-icon" aria-hidden="true">
+                                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <path d="M3 3v18h18"></path>
+                                        <path d="M7 15l4-4 3 3 5-6"></path>
+                                    </svg>
+                                </span>
+                                <h3>Daily Movement View</h3>
+                                <p class="mb-0">Review today’s visits and sign visitors out when they leave the premises.</p>
+                            </article>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <section class="section-band process-band" aria-labelledby="workflowTitle">
+        <div class="container">
+            <h2 class="section-title mb-4" id="workflowTitle">Reception workflow</h2>
+            <div class="row g-4">
+                <div class="col-md-4">
+                    <div class="process-step">
+                        <span class="step-number" aria-hidden="true">1</span>
+                        <div>
+                            <h3 class="h5 fw-bold">Identify</h3>
+                            <p class="text-muted mb-0">Search for a returning visitor or register a new person at the desk.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="process-step">
+                        <span class="step-number" aria-hidden="true">2</span>
+                        <div>
+                            <h3 class="h5 fw-bold">Record</h3>
+                            <p class="text-muted mb-0">Capture purpose, documents, group size, and generate a visit number.</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="col-md-4">
+                    <div class="process-step">
+                        <span class="step-number" aria-hidden="true">3</span>
+                        <div>
+                            <h3 class="h5 fw-bold">Close</h3>
+                            <p class="text-muted mb-0">Use the daily visits view to track active entries and sign visitors out.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+</main>
+
+<footer class="site-footer">
+    <div class="container d-flex flex-wrap align-items-center justify-content-between gap-2">
+        <span>NCS Visitor Management System</span>
+        <span>Authorized service personnel only</span>
+    </div>
+</footer>
+
+<div class="modal fade" id="loginModal" tabindex="-1" aria-labelledby="loginModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h2 class="modal-title h4 fw-bold" id="loginModalLabel">Secure Login</h2>
+                    <p class="text-muted mb-0">Enter your service credentials to continue.</p>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                {% if error %}
+                <div class="alert alert-danger" id="loginError" role="alert">{{ error }}</div>
+                {% endif %}
+
+                <form method="post" action="{{ url_for('login') }}" id="loginForm" novalidate>
+                    <div class="mb-3">
+                        <label class="form-label" for="service_no">Service No</label>
+                        <input
+                            class="form-control"
+                            id="service_no"
+                            name="service_no"
+                            value="{{ service_no or officer_name or '' }}"
+                            autocomplete="username"
+                            inputmode="text"
+                            autocapitalize="characters"
+                            spellcheck="false"
+                            required>
+                    </div>
+
+                    <div class="mb-2">
+                        <label class="form-label" for="password">Password</label>
+                        <div class="input-group">
+                            <input
+                                class="form-control"
+                                id="password"
+                                name="password"
+                                type="password"
+                                autocomplete="current-password"
+                                required>
+                            <button
+                                class="btn btn-outline-secondary password-toggle"
+                                type="button"
+                                id="togglePassword"
+                                aria-label="Show password"
+                                aria-pressed="false"
+                                title="Show password">
+                                <svg id="eyeOpen" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                                    <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"></path>
+                                    <circle cx="12" cy="12" r="3"></circle>
+                                </svg>
+                                <svg id="eyeClosed" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" style="display:none;">
+                                    <path d="M9.9 4.2A10.4 10.4 0 0 1 12 4c6.5 0 10 8 10 8a17.8 17.8 0 0 1-3.2 4.4"></path>
+                                    <path d="M14.1 14.1A3 3 0 0 1 9.9 9.9"></path>
+                                    <path d="M3 3l18 18"></path>
+                                    <path d="M6.6 6.6C3.7 8.6 2 12 2 12s3.5 8 10 8a10.7 10.7 0 0 0 4.1-.8"></path>
+                                </svg>
+                            </button>
+                        </div>
+                        <p class="caps-hint" id="capsHint" role="status">Caps Lock is on.</p>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mb-4">
+                        <span class="text-muted small">Password is managed by the system administrator.</span>
+                        <a class="forgot-link small" href="#" data-bs-toggle="modal" data-bs-target="#forgotPasswordModal">Forgot Password?</a>
+                    </div>
+
+                    <button class="btn btn-ncs w-100" type="submit" id="loginSubmit">Continue</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="forgotPasswordModal" tabindex="-1" aria-labelledby="forgotPasswordLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h2 class="modal-title h4 fw-bold" id="forgotPasswordLabel">Forgot Password</h2>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body p-4">
+                <p class="mb-3">
+                    Contact the VMS administrator or duty supervisor to reset your password. For this prototype,
+                    update <code>DESK_OFFICER_CODE</code> in the environment configuration.
+                </p>
+                <button class="btn btn-ncs" type="button" data-bs-toggle="modal" data-bs-target="#loginModal">
+                    Back to Login
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script src="{{ url_for('static', filename='js/bootstrap.bundle.min.js') }}"></script>
+<script>
+(function () {
+    'use strict';
+
+    const togglePassword = document.getElementById('togglePassword');
+    const passwordInput = document.getElementById('password');
+    const serviceNoInput = document.getElementById('service_no');
+    const loginError = document.getElementById('loginError');
+    const eyeOpen = document.getElementById('eyeOpen');
+    const eyeClosed = document.getElementById('eyeClosed');
+    const capsHint = document.getElementById('capsHint');
+    const loginForm = document.getElementById('loginForm');
+    const loginSubmit = document.getElementById('loginSubmit');
+
+    togglePassword.addEventListener('click', function () {
+        const isHidden = passwordInput.type === 'password';
+        passwordInput.type = isHidden ? 'text' : 'password';
+        togglePassword.setAttribute('aria-label', isHidden ? 'Hide password' : 'Show password');
+        togglePassword.setAttribute('aria-pressed', String(isHidden));
+        togglePassword.setAttribute('title', isHidden ? 'Hide password' : 'Show password');
+        eyeOpen.style.display = isHidden ? 'none' : 'inline';
+        eyeClosed.style.display = isHidden ? 'inline' : 'none';
+        passwordInput.focus();
+    });
+
+    // Warn about Caps Lock, a common cause of failed logins.
+    function updateCapsHint(event) {
+        if (typeof event.getModifierState !== 'function') return;
+        capsHint.classList.toggle('is-visible', event.getModifierState('CapsLock'));
+    }
+
+    passwordInput.addEventListener('keydown', updateCapsHint);
+    passwordInput.addEventListener('keyup', updateCapsHint);
+    passwordInput.addEventListener('blur', function () {
+        capsHint.classList.remove('is-visible');
+    });
+
+    [serviceNoInput, passwordInput].forEach(function (input) {
+        input.addEventListener('input', function () {
+            if (loginError) {
+                loginError.style.display = 'none';
+            }
+        });
+    });
+
+    // Prevent double submits and give immediate feedback.
+    loginForm.addEventListener('submit', function () {
+        loginSubmit.setAttribute('aria-busy', 'true');
+        loginSubmit.disabled = true;
+        loginSubmit.textContent = 'Signing in…';
+    });
+
+    {% if error %}
+    const loginModal = new bootstrap.Modal(document.getElementById('loginModal'));
+    loginModal.show();
+    {% endif %}
+})();
+</script>
+</body>
+</html>
