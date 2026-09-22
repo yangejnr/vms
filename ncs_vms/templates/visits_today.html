@@ -70,12 +70,19 @@
         <td>{{ v.signin_time }}</td>
         <td>{{ v.signout_time }}</td>
         <td>{{ v.created_by }}</td>
-        <td class="text-end">
+        <td class="text-end text-nowrap">
+          <button
+            type="button"
+            class="btn btn-sm btn-outline-primary"
+            data-visit-id="{{ v.id }}"
+            onclick="viewVisit(this)"
+            title="View visitor and visit details">View</button>
           {% if v.status == 'in' %}
           <button
             type="button"
             class="btn btn-sm btn-danger"
             data-visit-no="{{ v.visit_no }}"
+            data-visitor="{{ v.fullname }}"
             onclick="signoutRow(this)">Sign Out</button>
           {% else %}
           <span class="text-muted small">Signed out</span>
@@ -89,10 +96,92 @@
     </tbody>
   </table>
 </div>
+
+<!-- Visitor and visit detail modal -->
+<div class="modal fade" id="visitModal" tabindex="-1" aria-labelledby="visitModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-lg modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h2 class="modal-title h5 fw-bold mb-0" id="visitModalLabel">Visit Details</h2>
+          <span class="text-muted small" id="visitModalSubtitle"></span>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body" id="visitModalBody">
+        <div class="text-center py-5 text-muted">
+          <div class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></div>
+          Loading…
+        </div>
+      </div>
+      <div class="modal-footer justify-content-between">
+        <span class="text-muted small" id="visitModalFooter"></span>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Sign-out confirmation modal -->
+<div class="modal fade" id="signoutModal" tabindex="-1" aria-labelledby="signoutModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2 class="modal-title h5 fw-bold" id="signoutModalLabel">Confirm Sign Out</h2>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+      <div class="modal-body">
+        <div class="d-flex gap-3">
+          <div class="flex-shrink-0">
+            <span class="d-inline-grid" style="width:44px;height:44px;place-items:center;border-radius:50%;background:rgba(220,53,69,.12);color:#dc3545;">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+                <path d="m16 17 5-5-5-5"></path>
+                <path d="M21 12H9"></path>
+              </svg>
+            </span>
+          </div>
+          <div>
+            <p class="mb-2" id="signoutQuestion">Sign this visitor out?</p>
+            <p class="mb-0 text-muted small">
+              The visit will be closed and the departure time recorded against your service number.
+              This cannot be undone.
+            </p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-danger" id="signoutConfirmBtn" onclick="confirmSignout()">
+          <span id="signoutConfirmText">Sign Out</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+const visitModal = new bootstrap.Modal(document.getElementById('visitModal'));
+const signoutModal = new bootstrap.Modal(document.getElementById('signoutModal'));
+let pendingSignout = null;
+
+function escapeHtml(value) {
+  return String(value === null || value === undefined ? '' : value)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
+
+function dash(value) {
+  const empty = value === null || value === undefined || value === '' ||
+                (typeof value === 'string' && value.trim().toLowerCase() === 'none');
+  return empty ? '<span class="text-muted">Not provided</span>' : escapeHtml(value);
+}
+
 function filterVisits() {
   const term = document.getElementById('visitSearch').value.trim().toLowerCase();
   const rows = document.querySelectorAll('#visitsTable tbody tr[data-name]');
@@ -114,34 +203,63 @@ function clearVisitSearch() {
   filterVisits();
 }
 
+/* ------------------------------------------------------ sign-out confirmation */
+
 function signoutVisit(e) {
   e.preventDefault();
-  const no = document.getElementById('signout_visit_no').value;
-  submitSignout(no, document.getElementById('signout_status'));
+  const no = document.getElementById('signout_visit_no').value.trim();
+  if (!no) return false;
+  askSignout(no, null, null, null);
   return false;
 }
 
 function signoutRow(button) {
   const no = button.dataset.visitNo;
   if (!no) return;
-  if (!window.confirm('Sign out visit ' + no + '?')) return;
-  submitSignout(no, null, button);
+  askSignout(no, null, button, button.dataset.visitor || null);
 }
 
-function submitSignout(visitNo, statusEl, button) {
-  if (!visitNo) return;
+function askSignout(visitNo, statusEl, button, visitorName) {
+  pendingSignout = { visitNo: visitNo, statusEl: statusEl, button: button };
 
-  if (button) {
-    button.disabled = true;
-    button.innerText = 'Signing out...';
+  const question = document.getElementById('signoutQuestion');
+  if (visitorName) {
+    question.innerHTML = 'Sign out <b>' + escapeHtml(visitorName) + '</b>?<br>' +
+                         '<span class="text-muted small">Visit ' + escapeHtml(visitNo) + '</span>';
+  } else {
+    question.innerHTML = 'Sign out visit <b>' + escapeHtml(visitNo) + '</b>?';
   }
+
+  const btn = document.getElementById('signoutConfirmBtn');
+  btn.disabled = false;
+  document.getElementById('signoutConfirmText').innerText = 'Sign Out';
+  signoutModal.show();
+}
+
+function confirmSignout() {
+  if (!pendingSignout) return;
+  const { visitNo, statusEl, button } = pendingSignout;
+
+  const btn = document.getElementById('signoutConfirmBtn');
+  btn.disabled = true;
+  document.getElementById('signoutConfirmText').innerText = 'Signing out…';
+
+  submitSignout(visitNo, statusEl, button, function onFailure() {
+    btn.disabled = false;
+    document.getElementById('signoutConfirmText').innerText = 'Sign Out';
+    signoutModal.hide();
+  });
+}
+
+function submitSignout(visitNo, statusEl, button, onFailure) {
+  if (!visitNo) return;
 
   const fd = new FormData();
   fd.append('visit_no', visitNo);
 
   fetch('/api/visit/signout', { method: 'POST', body: fd })
     .then(r => r.json())
-    .then(d => {
+    .then(function (d) {
       if (d.ok) {
         if (statusEl) {
           statusEl.classList.remove('text-danger');
@@ -149,33 +267,128 @@ function submitSignout(visitNo, statusEl, button) {
           statusEl.innerText = 'Signed out.';
         }
         window.location.reload();
+        return;
+      }
+      const message = d.error || 'Unable to sign out visit.';
+      if (statusEl) {
+        statusEl.classList.remove('text-success');
+        statusEl.classList.add('text-danger');
+        statusEl.innerText = message;
       } else {
-        if (button) {
-          button.disabled = false;
-          button.innerText = 'Sign Out';
-        }
-        if (statusEl) {
-          statusEl.classList.remove('text-success');
-          statusEl.classList.add('text-danger');
-          statusEl.innerText = d.error || 'Error';
-        } else {
-          alert(d.error || 'Unable to sign out visit.');
-        }
+        window.alert(message);
       }
+      if (onFailure) onFailure();
     })
-    .catch(function() {
-      if (button) {
-        button.disabled = false;
-        button.innerText = 'Sign Out';
-      }
+    .catch(function () {
       if (statusEl) {
         statusEl.classList.remove('text-success');
         statusEl.classList.add('text-danger');
         statusEl.innerText = 'Network error.';
       } else {
-        alert('Network error. Please try again.');
+        window.alert('Network error. Please try again.');
       }
+      if (onFailure) onFailure();
     });
+}
+
+/* ------------------------------------------------------------- detail modal */
+
+function viewVisit(button) {
+  const id = button.dataset.visitId;
+  if (!id) return;
+
+  document.getElementById('visitModalSubtitle').innerText = '';
+  document.getElementById('visitModalFooter').innerText = '';
+  document.getElementById('visitModalBody').innerHTML =
+    '<div class="text-center py-5 text-muted">' +
+    '<div class="spinner-border spinner-border-sm me-2" role="status" aria-hidden="true"></div>' +
+    'Loading…</div>';
+  visitModal.show();
+
+  fetch('/api/visit/' + encodeURIComponent(id) + '/details')
+    .then(r => r.json())
+    .then(function (d) {
+      if (!d.ok) {
+        document.getElementById('visitModalBody').innerHTML =
+          '<div class="alert alert-danger mb-0">' + escapeHtml(d.error || 'Unable to load details.') + '</div>';
+        return;
+      }
+      renderVisit(d.visit);
+    })
+    .catch(function () {
+      document.getElementById('visitModalBody').innerHTML =
+        '<div class="alert alert-danger mb-0">Network error. Please try again.</div>';
+    });
+}
+
+function titleCase(value) {
+  if (!value) return value;
+  return String(value).charAt(0).toUpperCase() + String(value).slice(1);
+}
+
+function renderVisit(v) {
+  const statusBadge = v.status === 'in'
+    ? '<span class="badge bg-success">Signed In</span>'
+    : '<span class="badge bg-secondary">Signed Out</span>';
+
+  document.getElementById('visitModalLabel').innerText = v.visitor_name || 'Visit Details';
+  document.getElementById('visitModalSubtitle').innerHTML =
+    'Visit ' + escapeHtml(v.visit_no || '') + ' &nbsp;' + statusBadge;
+
+  const photo = v.photo_url
+    ? '<img src="' + escapeHtml(v.photo_url) + '" alt="Visitor photograph" ' +
+      'class="img-fluid rounded border" style="max-width:100%;">'
+    : '<div class="d-grid text-muted border rounded bg-light" ' +
+      'style="aspect-ratio:4/5;place-items:center;">No photograph<br>on record</div>';
+
+  const qr = v.qr_url
+    ? '<img src="' + escapeHtml(v.qr_url) + '" alt="Visit QR code" style="width:120px;height:120px;" class="border rounded p-1 bg-white">'
+    : '';
+
+  document.getElementById('visitModalBody').innerHTML =
+    '<div class="row g-4">' +
+
+      '<div class="col-md-4">' +
+        photo +
+        (qr ? '<div class="text-center mt-3">' + qr +
+              '<div class="text-muted small mt-1">Visit slip</div></div>' : '') +
+      '</div>' +
+
+      '<div class="col-md-8">' +
+
+        '<h6 class="text-uppercase text-muted small fw-bold mb-2">Visitor</h6>' +
+        '<dl class="row mb-4 small">' +
+          '<dt class="col-5">Full name</dt><dd class="col-7">' + dash(v.visitor_name) + '</dd>' +
+          '<dt class="col-5">Phone</dt><dd class="col-7">' + dash(v.visitor_phone) + '</dd>' +
+          '<dt class="col-5">Email</dt><dd class="col-7">' + dash(v.visitor_email) + '</dd>' +
+          '<dt class="col-5">Gender</dt><dd class="col-7">' + dash(v.visitor_gender) + '</dd>' +
+          '<dt class="col-5">Organisation</dt><dd class="col-7">' + dash(v.visitor_organization) + '</dd>' +
+          '<dt class="col-5">ID type</dt><dd class="col-7">' + dash(v.visitor_id_type) + '</dd>' +
+          '<dt class="col-5">ID number</dt><dd class="col-7">' + dash(v.visitor_id_number) + '</dd>' +
+          '<dt class="col-5">Address</dt><dd class="col-7">' + dash(v.visitor_address) + '</dd>' +
+          '<dt class="col-5">Previous visits</dt><dd class="col-7">' + escapeHtml(v.previous_visits) + '</dd>' +
+        '</dl>' +
+
+        '<h6 class="text-uppercase text-muted small fw-bold mb-2">Visit</h6>' +
+        '<dl class="row mb-0 small">' +
+          '<dt class="col-5">Visit number</dt><dd class="col-7"><code>' + dash(v.visit_no) + '</code></dd>' +
+          '<dt class="col-5">Date</dt><dd class="col-7">' + dash(v.date_display || v.date) + '</dd>' +
+          '<dt class="col-5">Purpose</dt><dd class="col-7">' + dash(titleCase(v.purpose)) + '</dd>' +
+          '<dt class="col-5">Host / Officer</dt><dd class="col-7">' + dash(v.host_name) + '</dd>' +
+          '<dt class="col-5">Destination</dt><dd class="col-7">' + dash(v.destination) + '</dd>' +
+          '<dt class="col-5">Group size</dt><dd class="col-7">' + dash(v.group_size) + '</dd>' +
+          '<dt class="col-5">Documents carried</dt><dd class="col-7">' + dash(v.documents) + '</dd>' +
+          '<dt class="col-5">Signed in</dt><dd class="col-7">' + dash(v.signin_display || v.signin_time) + '</dd>' +
+          '<dt class="col-5">Signed out</dt><dd class="col-7">' + dash(v.signout_display || v.signout_time) + '</dd>' +
+          '<dt class="col-5">Recorded by</dt><dd class="col-7">' + dash(v.created_by_name || v.created_by) + '</dd>' +
+          '<dt class="col-5">Signed out by</dt><dd class="col-7">' + dash(v.signed_out_by_name || v.signed_out_by) + '</dd>' +
+        '</dl>' +
+
+      '</div>' +
+    '</div>';
+
+  document.getElementById('visitModalFooter').innerText =
+    'Recorded by ' + (v.created_by_name || v.created_by || 'unknown');
 }
 </script>
 {% endblock %}

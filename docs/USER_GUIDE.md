@@ -210,16 +210,32 @@ There are two ways:
 
 1. Find the visitor's row. Their status shows a green **In** badge.
 2. Click the red **Sign Out** button at the right of that row.
-3. Confirm the prompt.
+3. A confirmation window appears showing the visitor's name and visit number.
+   Click **Sign Out** to confirm, or **Cancel** to go back.
 
 **Option B — By visit number**
 
 1. Type the visit number into the **Visit No** box (for example
    `NCS/26/09/22/0001`).
-2. Click **Sign Out**.
+2. Click **Sign Out** and confirm in the window that appears.
 
 The visitor's status changes to a grey **Out** badge and the sign-out time is recorded
 along with your service number.
+
+### Viewing visitor and visit details
+
+Every row has a **View** button. Click it to open a window showing:
+
+- the visitor's **photograph**, or a note that none is on record
+- the **visit QR slip**
+- **visitor details**: name, phone, email, gender, organisation, ID type and
+  number, address, and how many previous visits they have made
+- **visit details**: visit number, date, purpose, host, destination, group size,
+  documents carried, sign-in and sign-out times, and which officer recorded and
+  signed out the visit
+
+This is useful for confirming identity at the desk or reviewing a visit after the
+visitor has left. Close the window with the **Close** button or the X.
 
 ---
 

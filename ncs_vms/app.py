@@ -1232,6 +1232,7 @@ def visits_today():
     for v in visits:
         visitor = db.session.get(Visitor, v.visitor_id)
         rows.append({
+            'id': v.id,
             'visit_no': v.visit_no,
             'fullname': visitor.fullname if visitor else '',
             'phone': visitor.phone if visitor else '',
@@ -1752,6 +1753,55 @@ def signout_visit():
     vi.signed_out_by = session.get('desk_officer')
     db.session.commit()
     return jsonify({'ok': True})
+
+@app.route('/api/visit/<int:visit_id>/details')
+def visit_details(visit_id):
+    """Full visit and visitor detail for the reception details modal."""
+    gate = require_api_reception_session()
+    if gate:
+        return gate
+
+    visit = db.session.get(Visit, visit_id)
+    if not visit:
+        return jsonify({'ok': False, 'error': 'visit_not_found'}), 404
+
+    visitor = db.session.get(Visitor, visit.visitor_id)
+
+    data = visit_to_dict(visit, visitor)
+    data.update({
+        'visitor_email': visitor.email if visitor else None,
+        'visitor_address': visitor.address if visitor else None,
+        'visitor_organization': visitor.organization if visitor else None,
+        'visitor_id_type': visitor.id_type if visitor else None,
+        'visitor_id_number': visitor.id_number if visitor else None,
+        'visitor_gender': visitor.gender if visitor else None,
+        'has_photo': bool(visitor and visitor.photo_path),
+        'photo_url': url_for('visitor_photo', visitor_id=visitor.id) if visitor and visitor.photo_path else None,
+        'qr_url': url_for('static', filename=visit.qr_path) if visit.qr_path else None,
+        'previous_visits': Visit.query.filter(
+            Visit.visitor_id == visit.visitor_id,
+            Visit.id != visit.id
+        ).count()
+    })
+
+    # Human-readable timestamps for display.
+    data['date_display'] = visit.date.strftime('%d %b %Y') if visit.date else None
+    data['signin_display'] = visit.signin_time.strftime('%d %b %Y, %H:%M') if visit.signin_time else None
+    data['signout_display'] = visit.signout_time.strftime('%d %b %Y, %H:%M') if visit.signout_time else None
+    data['created_by_name'] = officer_display_name(visit.created_by)
+    data['signed_out_by_name'] = officer_display_name(visit.signed_out_by)
+
+    return jsonify({'ok': True, 'visit': data})
+
+def officer_display_name(service_no):
+    """Resolve a stored service number to a readable officer label."""
+    if not service_no:
+        return None
+    user = User.query.filter(func.lower(User.service_no) == service_no.lower()).first()
+    if not user:
+        return service_no
+    parts = [user.rank, user.fullname] if user.rank else [user.fullname]
+    return f"{' '.join(parts)} ({user.service_no})"
 
 _ngrok_cleaned = False
 

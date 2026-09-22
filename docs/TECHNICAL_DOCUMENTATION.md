@@ -611,6 +611,7 @@ require the `Admin` role.
 | --- | --- | --- | --- |
 | GET | `/api/visits` | Reception | Recent visits (`?status=in`) |
 | GET | `/api/visits/history` | Reception | Filtered history |
+| GET | `/api/visit/<id>/details` | Reception | Full visit + visitor detail for the modal |
 | POST | `/api/visit/create` | Reception | Create a visit and QR slip |
 | POST | `/api/visit/signout` | Reception | Sign a visit out |
 
